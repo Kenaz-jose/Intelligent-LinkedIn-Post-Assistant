@@ -1,50 +1,45 @@
+import os
 import json
-from langchain_openai import ChatOpenAI
+from dotenv import load_dotenv
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import PydanticOutputParser
 
 from src.schemas.refiner import RefinerResult
 from src.prompts.refiner import REFINER_PROMPT
 
+load_dotenv()
 
 class RefinerAgent:
     """
     Final step: converts reflection plan into polished LinkedIn post.
     """
-
     def __init__(
         self,
-        model_name: str = "qwen/qwen3-4b-2507",
+        model_name: str = "meta/llama-3.1-70b-instruct",
         temperature: float = 0.4,
     ):
-
-        self.llm = ChatOpenAI(
-            base_url="http://127.0.0.1:1234/v1",
-            api_key="lm-studio",
+        self.llm = ChatNVIDIA(
             model=model_name,
-            temperature=temperature
+            temperature=temperature,
+            api_key=os.getenv("NVIDIA_API_KEY"),
+            max_retries=1,
+            timeout=30
         )
 
-        self.structured_llm = self.llm.with_structured_output(RefinerResult)
+        self.parser = PydanticOutputParser(pydantic_object=RefinerResult)
 
-        self.prompt = ChatPromptTemplate.from_template(REFINER_PROMPT)
-
-    def invoke(self, post, evaluation, reflection):
-
-        result = self.prompt.format_prompt(
-            post=post,
-
-            evaluation=json.dumps(
-                evaluation.model_dump(),
-                indent=2
-            ),
-
-
-            operations=json.dumps(
-                [op.model_dump() for op in reflection.operations],
-                indent=2
-            )
+        self.prompt = ChatPromptTemplate.from_template(
+            REFINER_PROMPT + "\n\n{format_instructions}"
         )
+        
+        self.chain = self.prompt | self.llm | self.parser
 
-        messages = result.to_messages()
-
-        return self.structured_llm.invoke(messages)
+    def invoke(self, post: str, reflection: object, topic: str) -> RefinerResult:
+        result = self.chain.invoke({
+            "post": post,
+            "operations": json.dumps([op.model_dump() for op in reflection.operations], indent=2),
+            "user_prompt": topic, # Critical for the faithfulness check!
+            "format_instructions": self.parser.get_format_instructions()
+        })
+        return result

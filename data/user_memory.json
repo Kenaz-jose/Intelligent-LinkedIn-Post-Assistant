@@ -1,0 +1,17 @@
+{
+  "demo-user": {
+    "user_id": "demo-user",
+    "known_views": [
+      "Most people feel agentic engineering is very hard, but if you understand the concepts everything else will be easy."
+    ],
+    "known_experiences": [
+      "Worked on a multi AI agentic system for LinkedIn post optimization system",
+      "Improved the agentic architecture for that project"
+    ],
+    "past_topics": [
+      "Agentic Engineering"
+    ],
+    "audience": "AI engineers",
+    "interviews_done": 1
+  }
+}

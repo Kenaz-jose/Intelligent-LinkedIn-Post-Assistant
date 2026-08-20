@@ -1,39 +1,42 @@
+import os
 import json
-from langchain_openai import ChatOpenAI
+from dotenv import load_dotenv
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import PydanticOutputParser
 
-from src.schemas.reflection import ReflectionResult
+from src.schemas.reflection import ReflectionResult # Ensure you have this schema imported
 from src.prompts.reflection import REFLECTION_PROMPT
 
+load_dotenv()
 
 class ReflectionAgent:
-    """
-    Converts evaluation results into actionable improvement plans.
-    """
-
-    def __init__(self, model_name="qwen/qwen3-4b-2507", temperature=0.2):
-
-        self.llm = ChatOpenAI(
-            base_url="http://127.0.0.1:1234/v1",
-            api_key="lm-studio",
-            model=model_name,   
-            temperature=temperature
+    def __init__(
+        self,
+        model_name: str = "meta/llama-3.1-70b-instruct",
+        temperature: float = 0.2,
+    ):
+        self.llm = ChatNVIDIA(
+            model=model_name,
+            temperature=temperature,
+            api_key=os.getenv("NVIDIA_API_KEY"),
+            max_retries=1,
+            timeout=30
         )
 
-        self.structured_llm = self.llm.with_structured_output(ReflectionResult)
+        self.parser = PydanticOutputParser(pydantic_object=ReflectionResult)
+        
+        self.prompt = ChatPromptTemplate.from_template(
+            REFLECTION_PROMPT + "\n\n{format_instructions}"
+        )
+        
+        self.chain = self.prompt | self.llm | self.parser
 
-        self.prompt = ChatPromptTemplate.from_template(REFLECTION_PROMPT)
-
-        self.chain = self.prompt | self.structured_llm  # FIX: missing pipeline
-
-    def invoke(self, post: str, evaluation) -> ReflectionResult:
-        """
-        Args:
-            post: original LinkedIn post
-            evaluation: EvaluationResult object
-        """
-
-        return self.chain.invoke({
+    def invoke(self, post: str, evaluation: object, topic: str) -> ReflectionResult:
+        result = self.chain.invoke({
             "post": post,
-            "evaluation": json.dumps(evaluation.model_dump(), indent=2)
+            "evaluation": json.dumps(evaluation.model_dump(), indent=2),
+            "user_prompt": topic,
+            "format_instructions": self.parser.get_format_instructions()
         })
+        return result

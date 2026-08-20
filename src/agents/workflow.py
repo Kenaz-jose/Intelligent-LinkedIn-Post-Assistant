@@ -5,11 +5,11 @@ from src.agents.generator import GeneratorAgent
 from src.agents.evaluator import EvaluatorAgent
 from src.agents.reflection import ReflectionAgent
 from src.agents.refiner import RefinerAgent
+from src.schemas.perspective import PerspectiveBrief
 
-
-# STATE
 class LinkedInState(TypedDict):
     topic: str
+    brief: dict         
     post: str
 
     evaluation: Optional[object]
@@ -22,7 +22,6 @@ class LinkedInState(TypedDict):
     previous_engagement: int
 
 
-# AGENTS
 generator = GeneratorAgent()
 evaluator = EvaluatorAgent()
 reflection_agent = ReflectionAgent()
@@ -30,10 +29,19 @@ refiner = RefinerAgent()
 
 MAX_ITERATIONS = 3
 
+def brief_block(state: LinkedInState) -> str:
+    """
+    The author's brief as prompt text.
 
-# NODES
+    Every agent that used to receive state["topic"] now receives this.
+    One function means generator, evaluator, reflection and refiner all
+    see identical source material — which is what makes the faithfulness
+    score meaningful.
+    """
+    return PerspectiveBrief.model_validate(state["brief"]).to_prompt_block()
+
 def generate_node(state: LinkedInState):
-    post = generator.invoke(state["topic"])
+    post = generator.invoke(brief_block(state))
     
     print("\n===== GENERATED POST =====")
     print(post)
@@ -50,7 +58,6 @@ def generate_node(state: LinkedInState):
 
 
 def display_evaluation(evaluation):
-
     scores = evaluation.scores
 
     print("\n" + "="*60)
@@ -59,7 +66,6 @@ def display_evaluation(evaluation):
 
     print("\nSCORES")
     print("-"*60)
-
     print(f"Hook            : {scores.hook}/10")
     print(f"Clarity         : {scores.clarity}/10")
     print(f"Engagement      : {scores.engagement}/10")
@@ -68,21 +74,20 @@ def display_evaluation(evaluation):
     print(f"Structure       : {scores.structure}/10")
     print(f"Faithfulness    : {scores.faithfulness}/10")
 
-    print("\nIMPROVEMENT PRIORITY")
+    print("\nIMPROVEMENT OPPORTUNITIES")
     print("-"*60)
-
-    for i, item in enumerate(evaluation.improvement_priority, 1):
-        print(f"{i}. {item}")
+    for i, item in enumerate(evaluation.improvement_opportunities, 1):
+        print(f"\n{i}. [{item.priority} Priority] - {item.category}")
+        print(f"   Why  : {item.reason}")
+        print(f"   Fix  : {item.recommendation}")
 
     print("\nSTRENGTHS")
     print("-"*60)
-
     for s in evaluation.strengths:
         print(f"✓ {s}")
 
     print("\nWEAKNESSES")
     print("-"*60)
-
     for w in evaluation.weaknesses:
         print(f"✗ {w}")
 
@@ -90,12 +95,12 @@ def display_evaluation(evaluation):
     print("-"*60)
     print(evaluation.feedback)
 
-    print("\nNeeds Improvement:", evaluation.needs_improvement)
+    print("\nNeeds Improvement:", getattr(evaluation, "needs_improvement", True))
 
     print("="*60)
 
 def evaluate_node(state: LinkedInState):
-    evaluation = evaluator.invoke(state["post"])
+    evaluation = evaluator.invoke(state["post"], brief_block(state))
     
     display_evaluation(evaluation)
     
@@ -112,49 +117,38 @@ def evaluate_node(state: LinkedInState):
 
 
 def display_reflection(reflection):
-
     print("\n" + "="*60)
     print("🧠 REFLECTION PLAN")
     print("="*60)
 
     print("\nPRIORITY ISSUES")
     print("-"*60)
-
     for i, issue in enumerate(reflection.priority_issues, 1):
         print(f"{i}. {issue}")
 
     print("\nSTRENGTHS TO PRESERVE")
     print("-"*60)
-
     for s in reflection.strengths_to_preserve:
         print(f"✓ {s}")
 
     print("\nOPERATIONS")
     print("-"*60)
+    if not reflection.operations:
+        print("No operations required.")
+    else:
+        for i, op in enumerate(reflection.operations, 1):
+            print(f"\n{i}. {op.op}")
+            print(f"   Target Snippet : \"{op.target_snippet}\"")
+            print(f"   Instruction    : {op.instruction}")
 
-    for i, op in enumerate(reflection.operations, 1):
-
-        print(f"\n{i}. {op.op}")
-        print(f"   Target      : {op.target}")
-        print(f"   Instruction : {op.instruction}")
-
-        if op.to_position is not None:
-            print(f"   Position    : {op.to_position}")
-
-    print("\nDONE:", reflection.done)
-
-    print("\nCONSTRAINTS")
-    print("-"*60)
-
-    for k, v in reflection.constraints.items():
-        print(f"{k}: {v}")
-
+    print(f"\nDONE: {reflection.done}")
     print("="*60)
     
 def reflect_node(state: LinkedInState):
     reflection = reflection_agent.invoke(
         state["post"],
-        state["evaluation"]
+        state["evaluation"],
+        brief_block(state),
     )
     
     display_reflection(reflection)
@@ -166,7 +160,7 @@ def reflect_node(state: LinkedInState):
     for op in reflection.operations:
         logger.info(
             f"Operation={op.op} "
-            f"Target={op.target}"
+            f"TargetSnippet={op.target_snippet}"
         )
 
     return {
@@ -176,7 +170,6 @@ def reflect_node(state: LinkedInState):
 
 
 def display_refiner(refined):
-
     print("\n" + "="*60)
     print("✍️ REFINED POST")
     print("="*60)
@@ -186,41 +179,36 @@ def display_refiner(refined):
 
     print("\nCHANGES APPLIED")
     print("-"*60)
+    if not refined.changes_applied:
+        print("No changes were applied.")
+    else:
+        for i, change in enumerate(refined.changes_applied, 1):
+            print(f"\n{i}. {change.op} (Status: {change.status})")
+            print(f"   Target Snippet : \"{change.target_snippet}\"")
+            print(f"   Reason         : {change.reason}")
 
-    for i, change in enumerate(refined.changes_applied, 1):
-
-        print(f"\n{i}. {change.op}")
-        print(f"   Target      : {change.target}")
-        print(f"   Description : {change.description}")
-
-    print("\nHOOK TYPE:", refined.hook_type)
-
-    print(
-        "EXPECTED ENGAGEMENT:",
-        refined.expected_engagement_level
-    )
+    if refined.skipped_operations:
+        print("\nSKIPPED OPERATIONS")
+        print("-"*60)
+        for i, change in enumerate(refined.skipped_operations, 1):
+            print(f"\n{i}. {change.op}")
+            print(f"   Target Snippet : \"{change.target_snippet}\"")
+            print(f"   Reason Skipped : {change.reason}")
 
     print("\nFAITHFULNESS CHECK")
     print("-"*60)
-
-    print(
-        "Passed:",
-        refined.faithfulness_check.passed
-    )
+    print(f"Passed: {refined.faithfulness_check.passed}")
 
     if refined.faithfulness_check.notes:
-        print(
-            "Notes:",
-            refined.faithfulness_check.notes
-        )
+        print(f"Notes: {refined.faithfulness_check.notes}")
 
     print("="*60)
 
 def refine_node(state: LinkedInState):
     refined = refiner.invoke(
         state["post"],
-        state["evaluation"],
-        state["reflection"]
+        state["reflection"],
+        brief_block(state),
     )
     
     display_refiner(refined)
@@ -243,51 +231,60 @@ def refine_node(state: LinkedInState):
     }
 
 
-# =========================
 # ROUTER
-# =========================
+def check_evaluation(state: LinkedInState):
+    iteration = state.get("iteration", 0)
+    print(f"\n🚦 [ROUTER] Checking Evaluation (Iteration {iteration}/{MAX_ITERATIONS})")
 
-def should_continue(state: LinkedInState):
-
-    # Reflector says stop
-    if state.get("done", False):
-        return "end"
-
-    # Max iterations
-    if state.get("iteration", 0) >= MAX_ITERATIONS:
+    # 1. Stop if we hit the iteration limit
+    if iteration >= MAX_ITERATIONS:
+        print("   🛑 STOPPED: Max iterations reached.")
         return "end"
 
     evaluation = state.get("evaluation")
-
-    # Safety guard
+    
+    # Safety guard just in case the node failed
     if evaluation is None:
+        print("   ⚠️ WARNING: No evaluation found in state. Forcing continue.")
         return "continue"
 
-    # First evaluation
-    if state.get("previous_hook", 0) == 0:
-        return "continue"
-
-    current_hook = evaluation.scores.hook
-    current_engagement = evaluation.scores.engagement
-
-    previous_hook = state.get("previous_hook", 0)
-    previous_engagement = state.get("previous_engagement", 0)
-
-    # No improvement
-    if (
-        current_hook <= previous_hook
-        and current_engagement <= previous_engagement
-    ):
-        print("\n🛑 STOPPED: Scores no longer improving")
+    # 2. Stop if the Evaluator says the post is already great!
+    if not evaluation.needs_improvement:
+        print("   ✅ STOPPED: Evaluator approved the post (needs_improvement = False).")
         return "end"
 
+    # 3. Stop if the scores are stuck and not improving
+    previous_hook = state.get("previous_hook", 0)
+    previous_engagement = state.get("previous_engagement", 0)
+    
+    # Only check for stagnation if this isn't the first run
+    if previous_hook > 0: 
+        current_hook = evaluation.scores.hook
+        current_engagement = evaluation.scores.engagement
+        
+        print(f"   📊 Trend - Hook: {previous_hook} -> {current_hook} | Engagement: {previous_engagement} -> {current_engagement}")
+        
+        # If the scores did not go up, stop the loop so we don't waste tokens
+        if current_hook <= previous_hook and current_engagement <= previous_engagement:
+            print("   🛑 STOPPED: Scores are no longer improving.")
+            return "end"
+
+    print("   ➡️ PROCEEDING: Sending to Reflection Agent...")
     return "continue"
 
 
-# =========================
-# GRAPH
-# =========================
+def check_reflection(state: LinkedInState):
+    print("\n🚦 [ROUTER] Checking Reflection Plan")
+    
+    # Stop immediately if the Reflection agent realizes no high-priority edits are needed
+    if state.get("done", False):
+        print("   ✅ STOPPED: Reflection agent found no high-priority edits (done = True).")
+        return "end"
+        
+    print("   ➡️ PROCEEDING: Sending operations to Refiner Agent...")
+    return "continue"
 
+# GRAPH                                                                                                                                                                                                                                                                                                                                                                                  
 graph = StateGraph(LinkedInState)
 
 graph.add_node("generate", generate_node)
@@ -301,14 +298,22 @@ graph.add_edge("generate", "evaluate")
 
 graph.add_conditional_edges(
     "evaluate",
-    should_continue,
+    check_evaluation,
     {
         "continue": "reflect",
         "end": END
     }
 )
 
-graph.add_edge("reflect", "refine")
+graph.add_conditional_edges(
+    "reflect",
+    check_reflection,
+    {
+        "continue": "refine",
+        "end": END
+    }
+)
+
 graph.add_edge("refine", "evaluate")
 
 app = graph.compile()

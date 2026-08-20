@@ -1,64 +1,44 @@
 from pydantic import BaseModel, Field
-from typing import List, Literal, Dict, Optional
+from typing import List, Literal
 
-
-OperationType = Literal[
-    "HOOK_STRENGTHENING",
-    "CLARITY_IMPROVEMENT",
-    "TRANSITION_IMPROVEMENT",
-    "VALUE_CLARIFICATION",
-    "CONCISENESS",
-    "REORDERING",
-    "REDUNDANCY_REMOVAL",
-    "CTA_IMPROVEMENT",
-    "EXPLICITATION"
-]
-
-
-class Operation(BaseModel):
-    op: OperationType = Field(
-        ...,
-        description="Type of edit operation."
+class EditOperation(BaseModel):
+    op: Literal[
+        "HOOK_STRENGTHENING",
+        "CTA_IMPROVEMENT",
+        "TRANSITION_IMPROVEMENT",
+        "CLARITY_IMPROVEMENT",
+        "CONCISENESS",
+        "REDUNDANCY_REMOVAL",
+        "REORDERING",
+        "EXPLICITATION",
+        "FAITHFULNESS_CORRECTION"
+    ] = Field(
+        ..., 
+        description="The specific type of edit operation to perform."
     )
-
-    target: str = Field(
-        ...,
-        description="Target paragraph/sentence."
+    target_snippet: str = Field(
+        ..., 
+        description="A exact 3-5 word quote from the current draft identifying exactly where the edit should happen."
     )
-
-    instruction: Optional[str] = Field(
-        default=None,
-        description="How to apply the operation."
+    instruction: str = Field(
+        ..., 
+        description="Concise direction on what to change, referencing existing content only. Do not provide rewritten text."
     )
-
-    to_position: Optional[int] = Field(
-        default=None,
-        description="Used for reordering."
-    )
-
 
 class ReflectionResult(BaseModel):
     priority_issues: List[str] = Field(
-        default_factory=list
+        ..., 
+        description="List of the highest priority issues being addressed in this iteration (e.g., ['Hook', 'Faithfulness'])."
     )
-
     strengths_to_preserve: List[str] = Field(
-        default_factory=list
+        ..., 
+        description="List of elements that are working well and should not be modified."
     )
-
-    operations: List[Operation] = Field(
-        default_factory=list
+    operations: List[EditOperation] = Field(
+        ..., 
+        description="List of specific edit operations to apply. Should be empty if done is true."
     )
-
-    constraints: Dict[str, bool] = Field(
-        default_factory=lambda: {
-            "no_new_information": True,
-            "no_story_addition": True,
-            "preserve_meaning": True
-        }
-    )
-
     done: bool = Field(
-        default=False,
-        description="True if no more meaningful edits are needed."
+        ..., 
+        description="Set to true if no further high-impact edits are needed, or if the post is already stable and faithful."
     )

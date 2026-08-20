@@ -1,17 +1,17 @@
 from src.agents.workflow import app
 import json
 
-
 def safe(obj):
     return json.loads(json.dumps(obj, default=str))
-
 
 def run_pipeline(topic: str):
 
     result = app.invoke({"topic": topic})
 
     evaluation = result["evaluation"]
-    reflection = result["reflection"]
+    
+    # FIX: Use .get() so it defaults to None if the graph stops early
+    reflection = result.get("reflection") 
 
     scores = [
         {"metric": "Hook", "score": evaluation.scores.hook},
@@ -23,10 +23,13 @@ def run_pipeline(topic: str):
         {"metric": "Faithfulness", "score": evaluation.scores.faithfulness},
     ]
 
+    # FIX: Safely handle the reflection object if it doesn't exist
+    reflection_data = safe(reflection.model_dump()) if reflection else {}
+
     return {
         "post": str(result["post"]),
         "evaluation": safe(evaluation.model_dump()),
-        "reflection": safe(reflection.model_dump()),
-        "iteration": int(result["iteration"]),
+        "reflection": reflection_data,
+        "iteration": int(result.get("iteration", 0)),
         "scores": scores
     }

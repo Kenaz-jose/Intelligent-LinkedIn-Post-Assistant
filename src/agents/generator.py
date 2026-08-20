@@ -1,30 +1,36 @@
-from langchain_ollama import ChatOllama
+import os
+from dotenv import load_dotenv
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+
 from src.prompts.generator import GENERATOR_PROMPT
 
+load_dotenv()
+
 class GeneratorAgent:
-
-    def __init__(self, model_name: str = "llama3.2",temperature:float=0.7):
-        
-        self.llm = ChatOllama(model=model_name, temperature=temperature)
-        self.prompt = ChatPromptTemplate.from_template(GENERATOR_PROMPT)
-        self.chain = self.prompt | self.llm
-    
-    def invoke(self, user_prompt: str) -> str:
-        """
-         Generate a LinkedIn post draft.
-
-        Args:
-            user_prompt: User's topic or idea
-
-        Returns:
-            Generated LinkedIn post text
-        """
-
-        response = self.chain.invoke(
-            {
-                "user_prompt": user_prompt
-            }
+    def __init__(
+        self,
+        model_name: str = "meta/llama-3.1-70b-instruct",
+        temperature: float = 0.7,
+    ):
+        # Use ChatNVIDIA with strict timeout and retries
+        self.llm = ChatNVIDIA(
+            model=model_name,
+            temperature=temperature,
+            api_key=os.getenv("NVIDIA_API_KEY"),
+            max_retries=1,
+            timeout=30
         )
 
-        return response.content.strip()
+        self.prompt = ChatPromptTemplate.from_template(GENERATOR_PROMPT)
+        
+        # Attach the StrOutputParser directly to the chain
+        self.chain = self.prompt | self.llm | StrOutputParser()
+
+    def invoke(self, user_prompt: str) -> str:
+        response = self.chain.invoke({
+            "user_prompt": user_prompt
+        })
+        
+        return response.strip()
