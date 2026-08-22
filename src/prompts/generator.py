@@ -60,6 +60,6 @@ Return ONLY the LinkedIn post text. Do not include explanations, notes, conversa
 
 AUTHOR'S BRIEF
 <brief>
-{user_prompt}
+{brief}
 </brief>
 """

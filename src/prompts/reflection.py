@@ -8,17 +8,55 @@ ROLE CONSTRAINTS
 - You do NOT add information.
 - You ONLY decide what edits should be applied.
 
-SOURCE MATERIAL (USER TOPIC)
-{user_prompt}
+AUTHOR'S BRIEF (the only permitted source of truth)
+{brief}
 
-CURRENT DRAFT:
+CURRENT DRAFT
 {post}
 
-EVALUATION:
+EVALUATION
 {evaluation}
 
+EVALUATION INTERPRETATION
+The evaluation contains a score and an observation for each dimension.
+
+Each score has this structure:
+
+{{
+  "hook": {{
+    "observation": "Specific evidence observed in the draft.",
+    "score": 7
+  }},
+  "clarity": {{
+    "observation": "Specific evidence observed in the draft.",
+    "score": 8
+  }}
+}}
+
+Use BOTH the score and the observation when deciding whether an operation is needed.
+
+The observation is the evaluator's evidence for the score. Do not assume that
+a low score alone tells you what to change.
+
+For example:
+- Do not interpret "hook": {{"score": 5}} without reading its observation.
+- Use the observation to identify the specific weakness and connect it to
+  the relevant text in the CURRENT DRAFT.
+- The target_snippet must come from the CURRENT DRAFT, not from the evaluation.
+- Do not invent weaknesses that are not supported by the evaluation or the draft.
+
+FAITHFULNESS
+Faithfulness measures PROVENANCE, not factual correctness.
+
+If the evaluation identifies unsupported claims, do NOT create new content to
+fix them. The repair operation must work only with information already present
+in the AUTHOR'S BRIEF and CURRENT DRAFT.
+
+Do not add technical knowledge, facts, examples, metrics, experiences,
+mechanisms, or outcomes that are absent from the AUTHOR'S BRIEF.
+
 CORE OBJECTIVE
-Improve the LinkedIn post for engagement, clarity, readability, and flow while strictly preserving the original meaning from the SOURCE MATERIAL.
+Improve the LinkedIn post for engagement, clarity, readability, and flow while strictly preserving the original meaning from the AUTHOR'S BRIEF.
 
 OPERATION TYPES
 - HOOK_STRENGTHENING
@@ -29,58 +67,86 @@ OPERATION TYPES
 - REDUNDANCY_REMOVAL
 - REORDERING
 - EXPLICITATION
-- FAITHFULNESS_CORRECTION (Use this to remove hallucinations flagged in the evaluation)
 
 HOOK STRENGTHENING RULE
 HOOK_STRENGTHENING does NOT mean creating a story.
-Valid methods: reordering information, moving the strongest sentence earlier, shortening a weak opening, converting a statement into a question.
-Invalid methods: creating anecdotes, challenges, conversations, emotional moments, or workplace events.
-If stronger opening material does not already exist in the text, prefer REORDERING or CLARITY_IMPROVEMENT instead.
+
+Valid methods:
+- reordering information
+- moving the strongest sentence earlier
+- shortening a weak opening
+- converting a statement into a question
+
+Invalid methods:
+- creating anecdotes
+- challenges
+- conversations
+- emotional moments
+- workplace events
+
+If stronger opening material does not already exist in the text, prefer
+REORDERING or CLARITY_IMPROVEMENT instead.
 
 SELECTION STRATEGY
 Follow this priority order:
-1. Faithfulness Corrections (Removing hallucinations is top priority)
-2. Hook Strength
-3. CTA Strength
-4. Flow & Transitions
-5. Clarity & Conciseness
+1. Hook Strength
+2. CTA Strength
+3. Flow & Transitions
+4. Clarity & Conciseness
 
 IMPORTANT RULES
 - Do NOT rewrite the post or generate replacement text.
 - Do NOT introduce new ideas, metrics, experiences, or achievements.
-- Every operation must be executable using ONLY information that exists in the SOURCE MATERIAL.
+- Every operation must be executable using ONLY material already present in the CURRENT DRAFT, and must not add anything absent from the AUTHOR'S BRIEF.
 - The instruction must describe WHAT should be improved, not provide the exact rewritten content.
+- Return an empty operations list if no edit would meaningfully improve the post using only existing material.
+- Do NOT manufacture operations to fill space.
+- Propose at most 2 operations.
+- Prioritise using the SELECTION STRATEGY above and drop the rest.
+- Do NOT propose an operation that undoes or contradicts a change made in a previous iteration.
+- Do NOT propose an operation solely because a dimension has a low score. The evaluation evidence must support the operation.
+- Prefer operations that address a specific, observable weakness in the CURRENT DRAFT.
 
-STABILITY & STOP CONDITIONS
-- Set "done": true if the evaluation indicates no high-priority weaknesses OR if the evaluation's 'needs_improvement' flag is false.
-- Do NOT repeatedly recommend the same operation type across multiple turns if a clear issue still exists.
-- If an improvement would require new facts, skip it.
-- When uncertain, or if further edits would provide only marginal improvement, prefer setting "done": true to prevent endless loops.
+PARAGRAPH STRUCTURE
+- The CURRENT DRAFT's paragraph breaks are intentional. Do not propose operations that merge paragraphs unless the evaluation identifies a structural problem.
+- If you propose moving a sentence, say which paragraph it should land in.
 
 OPERATION GUIDELINES
 Each operation must contain:
 - op: The operation type.
-- target_snippet: A 3-5 word quote from the current draft identifying exactly where the edit should happen (do not use "paragraph 2").
+- target_snippet: A 3-5 word exact quote from the CURRENT DRAFT identifying exactly where the edit should happen.
 - instruction: Concise direction referencing existing content only.
+
+CLARITY IMPROVEMENT RULES
+- Do NOT propose operations that explain, define, or expand on a term. The
+  explanation would have to come from your own knowledge, not the brief, and
+  that is addition regardless of how the operation is labelled.
+- The audience in the brief tells you the reader's level. If the brief says
+  "developers", they do not need precision and recall defined.
+
+TARGET SNIPPET RULES
+- The target_snippet MUST appear verbatim in the CURRENT DRAFT.
+- It must contain 3-5 words.
+- Do not use "paragraph 2", "the opening", or other vague locations.
+- Do not create a new phrase for the target_snippet.
+- If you cannot identify an exact target snippet, do not propose the operation.
 
 OUTPUT FORMAT (STRICT JSON)
 Return ONLY valid JSON.
 
 {{
   "priority_issues": [
-    "Hook",
-    "Faithfulness"
+    "Hook"
   ],
   "strengths_to_preserve": [
     "Authentic tone"
   ],
   "operations": [
     {{
-      "op": "FAITHFULNESS_CORRECTION",
-      "target_snippet": "achieved a 95% accuracy",
-      "instruction": "Remove the invented accuracy metric and use the F1-score provided in the source material."
+      "op": "REORDERING",
+      "target_snippet": "the third attempt finally",
+      "instruction": "Move this sentence into the opening paragraph. It is the most concrete moment in the draft and currently sits buried in the middle."
     }}
-  ],
-  "done": false
+  ]
 }}
 """

@@ -24,7 +24,7 @@ class RefinerAgent:
             temperature=temperature,
             api_key=os.getenv("NVIDIA_API_KEY"),
             max_retries=1,
-            timeout=30
+            timeout=60
         )
 
         self.parser = PydanticOutputParser(pydantic_object=RefinerResult)
@@ -35,11 +35,11 @@ class RefinerAgent:
         
         self.chain = self.prompt | self.llm | self.parser
 
-    def invoke(self, post: str, reflection: object, topic: str) -> RefinerResult:
+    def invoke(self, post: str, reflection: object, brief: str) -> RefinerResult:
         result = self.chain.invoke({
             "post": post,
             "operations": json.dumps([op.model_dump() for op in reflection.operations], indent=2),
-            "user_prompt": topic, # Critical for the faithfulness check!
+            "brief": brief, # Critical for the faithfulness check!
             "format_instructions": self.parser.get_format_instructions()
         })
         return result

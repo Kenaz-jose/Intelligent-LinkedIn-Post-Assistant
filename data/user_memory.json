@@ -2,16 +2,36 @@
   "demo-user": {
     "user_id": "demo-user",
     "known_views": [
-      "Most people feel agentic engineering is very hard, but if you understand the concepts everything else will be easy."
+      "Most people feel agentic engineering is very hard, but if you understand the concepts everything else will be easy.",
+      "Clear agent roles and workflow design matter more than just using multiple LLMs in agentic engineering.",
+      "Giving each agent one clear responsibility is more important than simply adding more agents.",
+      "Good agentic systems are about clear responsibilities, not simply more agents.",
+      "The biggest mistake business development teams make when trying to integrate AI solutions is trying to automate everything immediately.",
+      "Quantum computing is better viewed as a specialized tool for certain problems, rather than a replacement for classical computers.",
+      "More complex models are not always better, data quality and problem formulation often matter more.",
+      "AI should augment security teams by detecting patterns and prioritizing threats while humans handle critical decisions."
     ],
     "known_experiences": [
       "Worked on a multi AI agentic system for LinkedIn post optimization system",
-      "Improved the agentic architecture for that project"
+      "Improved the agentic architecture for that project",
+      "Initially thought agentic engineering was mainly about using multiple LLMs, but building LinkedInForge showed otherwise",
+      "Debated with a colleague about the need for multiple agents instead of one strong LLM and concluded that specialized agents are useful",
+      "Improved the agentic architecture for the LinkedIn post optimization system",
+      "Separating generation, evaluation, reflection, and refinement makes the workflow easier to control",
+      "Separated generation, evaluation, reflection, and refinement in the LinkedIn post optimization system",
+      "Had to balance technical possibilities with practical requirements in own projects",
+      "Learned to explain AI in terms of outcomes rather than technology",
+      "The most surprising part was how quickly noise affected quantum computations, making theoretical algorithms behave very differently on real hardware.",
+      "Witnessed a machine learning model perform well on training data but poorly on unseen data due to overfitting."
     ],
     "past_topics": [
-      "Agentic Engineering"
+      "Agentic Engineering",
+      "Business development",
+      "Quantum computing",
+      "Machine learning",
+      "cyber security"
     ],
-    "audience": "AI engineers",
-    "interviews_done": 1
+    "audience": "cybersecurity professionals and AI engineers",
+    "interviews_done": 8
   }
 }

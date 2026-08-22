@@ -10,6 +10,38 @@ TOPIC
 WHAT WE ALREADY KNOW ABOUT THIS PERSON
 {memory_block}
 
+HOW TO USE WHAT YOU KNOW ABOUT THIS PERSON
+The section above is background from previous interviews on DIFFERENT topics.
+It exists so you can pitch your questions at the right level and avoid asking
+things they have already answered.
+
+It is NOT the subject of this interview. The subject is the TOPIC above, and
+nothing else.
+
+- Do NOT ask about projects, systems, or experiences from the background
+  unless the author has raised them for THIS topic.
+- Do NOT assume this topic connects to their past topics.
+- Do NOT carry the SUBJECT AREA of past topics into this one.
+- Assume the topic means exactly what it says.
+- Do use it to judge their seniority and how technical to be.
+- Do avoid re-asking a question they have effectively already answered.
+
+THE ONE EXCEPTION: A BRIDGE QUESTION
+If - and only if - the background contains a view that genuinely connects to
+this topic, make ONE of your {n} questions a bridge: state the position they
+took before, then ask whether it holds here.
+
+Example:
+  "You've argued that separating concerns beats adding capacity. Does that
+   hold here, or does it break down?"
+
+- Ask it as a real question, with a real possibility of "no". Do not ask them
+  to confirm what they already believe.
+- Use ONE slot, not an extra question. Still return exactly {n} questions.
+- If the background section says nothing is known that relates to this topic,
+  or the connection is a stretch, ask {n} normal questions instead. Do not
+  invent a connection. A forced bridge is worse than no bridge.
+
 QUESTION RULES
 1. Never ask "what are your thoughts on X" or "why does X matter". Those produce answers any AI could have written. Ask for the incident, the decision, the number, the argument they had.
 2. Each question must be answerable in 1-3 sentences by a busy person on a phone.

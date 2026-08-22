@@ -1,14 +1,48 @@
 from pydantic import BaseModel, Field
 from typing import List, Literal
 
+from pydantic import BaseModel, Field
+
+
+class DimensionScore(BaseModel):
+    """
+    Assessment before number.
+
+    The model must first state what it observed in the text
+    before committing to a score. This makes the score a
+    conclusion based on evidence rather than a first impression.
+    """
+    observation: str = Field(
+        ...,
+        description=(
+            "One sentence quoting or describing the specific text that determines this score."
+        ),
+    )
+    score: int = Field(
+        ...,
+        ge=1,
+        le=10,
+        description="Score for this dimension from 1 (poor) to 10 (excellent).",
+    )
+
+
 class Scores(BaseModel):
-    hook: int = Field(..., ge=1, le=10, description="Ability of opening to capture attention.")
-    clarity: int = Field(..., ge=1, le=10, description="How clear and understandable the post is.")
-    engagement: int = Field(..., ge=1, le=10, description="Likelihood of generating comments or reactions.")
-    authenticity: int = Field(..., ge=1, le=10, description="How human and non-generic the post feels.")
-    professionalism: int = Field(..., ge=1, le=10, description="Appropriateness for LinkedIn tone.")
-    structure: int = Field(..., ge=1, le=10, description="Logical flow and readability.")
-    faithfulness: int = Field(..., ge=1, le=10, description="Strict adherence to original input without hallucination.")
+    """
+    Scores for every evaluation dimension.
+
+    Each dimension contains both:
+    1. An observation explaining what the evaluator found.
+    2. A numerical score based on that observation.
+    """
+
+    hook: DimensionScore
+    clarity: DimensionScore
+    engagement: DimensionScore
+    authenticity: DimensionScore
+    professionalism: DimensionScore
+    structure: DimensionScore
+    faithfulness: DimensionScore
+
 
 class ImprovementOpportunity(BaseModel):
     category: str = Field(..., description="E.g., Hook, Engagement, Conciseness, Structure")
@@ -18,25 +52,23 @@ class ImprovementOpportunity(BaseModel):
 
 class EvaluationResult(BaseModel):
     scores: Scores = Field(..., description="Multi-dimensional scoring of the LinkedIn post.")
-    
+
     strengths: List[str] = Field(
-        ...,
-        min_length=3,
+        default_factory=list,
         max_length=3,
         description="Exactly 3 things that are already working well in the post."
     )
 
     weaknesses: List[str] = Field(
-        ...,
-        min_length=3,
+        default_factory=list,
         max_length=3,
-        description="Exactly 3 key issues reducing quality or impact."
+        description="Up to 3 meaningful issues. Return fewer, or none, if the post genuinely has none.",
     )
 
     improvement_opportunities: List[ImprovementOpportunity] = Field(
-        ...,
+        default_factory=list,
         min_length=2,
-        description="At least 2 actionable improvements detailing what to fix, why, and how."
+        description="Actionable improvements. Empty if no meaningful improvement remains.",
     )
 
     feedback: str = Field(
@@ -44,7 +76,11 @@ class EvaluationResult(BaseModel):
         description="Concise 2-4 sentence overall assessment and actionable feedback."
     )
 
-    needs_improvement: bool = Field(
-        default=False,
-        description="True if post requires refinement (e.g., if any score is below an 8)."
+    unsupported_claims: List[str] = Field(
+    default_factory=list,
+    description=(
+        "Verbatim snippets from the post that are not supported by the brief. "
+        "Empty list if everything traces back to the brief."
+    ),
     )
+

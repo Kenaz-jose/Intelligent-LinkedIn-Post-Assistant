@@ -27,18 +27,14 @@ class EditOperation(BaseModel):
 
 class ReflectionResult(BaseModel):
     priority_issues: List[str] = Field(
-        ..., 
+        default_factory=list, 
         description="List of the highest priority issues being addressed in this iteration (e.g., ['Hook', 'Faithfulness'])."
     )
     strengths_to_preserve: List[str] = Field(
-        ..., 
+        default_factory=list,
         description="List of elements that are working well and should not be modified."
     )
     operations: List[EditOperation] = Field(
-        ..., 
+        default_factory=list,
         description="List of specific edit operations to apply. Should be empty if done is true."
-    )
-    done: bool = Field(
-        ..., 
-        description="Set to true if no further high-impact edits are needed, or if the post is already stable and faithful."
     )

@@ -17,6 +17,13 @@ GROUNDING RULES (VERY IMPORTANT)
 1. Every item in evidence and details must trace back to something the author actually said in the interview above. If they did not say it, it does not go in the brief.
 2. Never invent metrics, companies, technologies, timelines, clients or colleagues to fill a field.
 3. If a field has no grounding in what they said, leave it empty or as an empty list. An empty field is correct. A plausible invention is a failure.
+4. Omission is as serious as invention. Anything the author said that belongs in a field must appear in that field. Dropping their material is not summarising - it removes the only thing the post is allowed to be built from.
+
+COMPLETENESS RULES
+- When the author lists several things, capture EVERY item. If they named five metrics, all five go in details. Do not pick the best three, do not merge similar ones, do not keep only the ones you consider important.
+- Do not summarise a list into a category. "Several evaluation metrics" is a failure; the individual metrics are the material.
+- Length is not a concern. A details list of ten items is better than a curated list of three.
+- Before returning, re-read each interview answer and check that nothing concrete in it was left out.
 
 THESIS RULES
 The thesis is the single most important field. It must be a claim someone could disagree with.

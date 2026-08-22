@@ -120,6 +120,27 @@ class Answer(BaseModel):
  PerspectiveBrief.
 """
 
+STOPWORDS = {
+    "the", "a", "an", "and", "or", "but", "is", "are", "was", "were", "be",
+    "been", "to", "of", "in", "on", "for", "with", "at", "by", "from",
+    "that", "this", "it", "as", "i", "we", "my", "our", "you", "your",
+    "more", "most", "than", "when", "how", "what", "why", "not", "no",
+    "can", "will", "would", "should", "about", "into", "over", "after",
+}
+
+def _keywords(text: str) -> set[str]:
+        """Content words, lowercased. Crude but deterministic - no LLM call,
+        no embedding model, no network."""
+        words = "".join(c if c.isalnum() or c.isspace() else " " for c in text.lower()).split()
+        return {w for w in words if len(w) > 3 and w not in STOPWORDS}
+
+
+def _is_relevant(item: str, topic_keywords: set[str]) -> bool:
+        """One shared content word is enough. The filter exists to drop the
+        clearly unrelated, not to judge how related something is - being
+        strict here would silently discard genuinely useful context."""
+        return bool(_keywords(item) & topic_keywords)
+        
 class PerspectiveBrief(BaseModel):
     """
     Structured representation of the user's perspective on
@@ -233,49 +254,39 @@ class PerspectiveBrief(BaseModel):
             f"READER TAKEAWAY: {self.takeaway}"
         )
 
+    def thin_fields(self) -> list[str]:
+        """
+        Which parts of the brief lack enough material to write from.
+
+        Returns human-readable labels rather than field names, because
+        the caller is showing these to the author. Ordered by how much
+        the gap hurts: missing evidence forces the generator to invent,
+        which is the failure the faithfulness gate exists to catch.
+        """
+        weak = []
+
+        if not self.evidence:
+            weak.append("first-hand experience")
+
+        if len(self.thesis.split()) < 5:
+            weak.append("a clear position")
+
+        if not self.details:
+            weak.append("concrete specifics (numbers, tools, timeframes)")
+
+        if not self.takeaway:
+            weak.append("a reader takeaway")
+
+        return weak
+
     def is_thin(self) -> bool:
         """
-        Performs a cheap deterministic check to determine
-        whether the perspective contains enough information
-        to produce personal content.
-
-        A perspective is considered "thin" if:
-        1. The thesis is extremely short, OR
-        2. There is no first-hand evidence.
-
-        This intentionally does NOT use an LLM.
-
-        The purpose is to catch obvious weak inputs cheaply
-        before spending another LLM call.
-
-        Example of a thin perspective:
-
-            thesis = "AI is changing everything"
-            evidence = []
-
-        Example of a stronger perspective:
-
-            thesis = "AI coding agents shift developers
-                      from implementation toward verification"
-
-            evidence = [
-                "I used an agent to build a feature",
-                "Most of my time was spent reviewing its output"
-            ]
-
-        FUTURE:
-        This can eventually evolve into a richer Perspective
-        Quality Score containing things such as:
-
-            - Specificity
-            - Evidence strength
-            - Distinctiveness
-            - Reasoning depth
-            - Actionability
-            - Originality
+        Unchanged in meaning: missing evidence or a stub thesis makes a
+        brief too weak to write personal content from. Now derived from
+        thin_fields so there is one definition rather than two.
         """
-
-        return len(self.thesis.split()) < 5 or not self.evidence
+        return "first-hand experience" in self.thin_fields() or \
+               "a clear position" in self.thin_fields()
 
 """
  LONG-TERM USER MEMORY
@@ -335,33 +346,41 @@ class UserMemory(BaseModel):
     audience: str = ""
     interviews_done: int = 0
 
-    def to_prompt_block(self) -> str:
+    def to_prompt_block(self, topic: str = "") -> str:
         """
-        Converts the user's memory into a standardized prompt
-        block for the Interview Agent or other agents.
+        Memory as prompt text, filtered to what relates to this topic.
 
-        If this is the first interview, explicitly tell the LLM
-        that nothing is known.
+        Without the filter, a memory block full of specifics from past
+        interviews outweighs a two-word topic and the interviewer drifts
+        back to old subjects. Views and experiences are therefore filtered;
+        audience and interview count are not, since those calibrate how to
+        ask rather than what to ask about.
 
-        An empty prompt can be ambiguous to an LLM.
-        Explicitly saying "nothing known yet" makes the state
-        clear.
+        Passing no topic returns everything, which is what callers that
+        are not conducting an interview want.
         """
-
         if self.interviews_done == 0:
             return "(First interview with this person — nothing known yet)"
+
+        views = self.known_views
+        experiences = self.known_experiences
+
+        if topic:
+            topic_keywords = _keywords(topic)
+            if topic_keywords:
+                views = [v for v in views if _is_relevant(v, topic_keywords)]
+                experiences = [e for e in experiences if _is_relevant(e, topic_keywords)]
 
         def bullets(items: list[str]) -> str:
             return (
                 "\n".join(f"  - {i}" for i in items)
                 if items
-                else "  - (none known)"
+                else "  - (nothing known that relates to this topic)"
             )
 
         return (
-            f"KNOWN VIEWS:\n{bullets(self.known_views)}\n"
-            f"KNOWN EXPERIENCES:\n{bullets(self.known_experiences)}\n"
-            f"PAST TOPICS:\n{bullets(self.past_topics)}\n"
+            f"KNOWN VIEWS:\n{bullets(views)}\n"
+            f"KNOWN EXPERIENCES:\n{bullets(experiences)}\n"
             f"AUDIENCE: {self.audience or '(not known)'}\n"
             f"INTERVIEWS COMPLETED: {self.interviews_done}"
         )

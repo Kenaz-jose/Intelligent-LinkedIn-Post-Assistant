@@ -20,7 +20,7 @@ class GeneratorAgent:
             temperature=temperature,
             api_key=os.getenv("NVIDIA_API_KEY"),
             max_retries=1,
-            timeout=30
+            timeout=60
         )
 
         self.prompt = ChatPromptTemplate.from_template(GENERATOR_PROMPT)
@@ -28,9 +28,9 @@ class GeneratorAgent:
         # Attach the StrOutputParser directly to the chain
         self.chain = self.prompt | self.llm | StrOutputParser()
 
-    def invoke(self, user_prompt: str) -> str:
+    def invoke(self, brief: str) -> str:
         response = self.chain.invoke({
-            "user_prompt": user_prompt
+            "brief": brief
         })
         
         return response.strip()

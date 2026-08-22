@@ -4,37 +4,160 @@ import plotly.express as px
 
 from src.agents.workflow import app as workflow_app
 from src.schemas.perspective import Answer
-from src.services.perspective_service import start_interview, finish_interview
+from src.services.perspective_service import (
+    start_interview,
+    probe_interview,
+    finish_interview,
+)
+from src.store.run_store import save_brief, save_run
 
 USER_ID = "demo-user"
 
-SCORE_FIELDS = [
+# Faithfulness is deliberately absent. It is a gate, not a craft dimension,
+# so charting it alongside the others would misrepresent how it is used.
+CRAFT_FIELDS = [
     "hook", "clarity", "engagement", "authenticity",
-    "professionalism", "structure", "faithfulness",
+    "professionalism", "structure",
 ]
 
 st.set_page_config(page_title="LinkedInForge", page_icon="🚀", layout="wide")
 
 
 def reset():
-    for key in ("phase", "topic", "questions", "brief", "result"):
+    for key in ("phase", "topic", "questions", "answers", "probe_questions",
+                "brief", "brief_id", "result"):
         st.session_state.pop(key, None)
+    for key in [k for k in st.session_state if k.startswith("ans_")]:
+        st.session_state.pop(key, None)
+
+
+def collect_answers(questions) -> list[Answer]:
+    """Render a question list and return the answers. Widget keys are the
+    question ids, so first-round (q1..qn) and probe (p1..pn) answers can
+    never overwrite each other."""
+    answers = []
+    for q in questions:
+        st.markdown(f"**{q.text}**")
+        st.caption(q.why)
+        text = st.text_area(
+            q.text,
+            key=f"ans_{q.id}",
+            placeholder=q.placeholder,
+            label_visibility="collapsed",
+            height=90,
+        )
+        answers.append(
+            Answer(question_id=q.id, question_text=q.text, answer=text)
+        )
+    return answers
+
+def render_brief(brief) -> None:
+    """
+    Human-readable view of the brief.
+
+    Deliberately separate from to_prompt_block(), which is the contract
+    with the agents and must stay stable. This one answers a single
+    question for the author: what angle is the post going to take?
+    """
+    st.markdown(f"#### {brief.thesis or '_No clear position captured_'}")
+    st.caption("This is the position the post will argue.")
+
+    st.divider()
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("**Written for**")
+        st.write(brief.audience or "Professionals on LinkedIn")
+
+    with col2:
+        st.markdown("**They should leave thinking**")
+        st.write(brief.takeaway or "_Nothing specific captured_")
+
+    st.divider()
+
+    st.markdown("**Drawing on your experience**")
+    if brief.evidence:
+        for item in brief.evidence:
+            st.markdown(f"- {item}")
+    else:
+        st.markdown(
+            "_Nothing captured. The post will have no first-hand material "
+            "to draw on._"
+        )
+
+    if brief.details:
+        st.markdown("**And these specifics**")
+        for item in brief.details:
+            st.markdown(f"- {item}")
 
 
 def scores_frame(evaluation) -> pd.DataFrame:
     s = evaluation.scores
-    return pd.DataFrame(
-        [{"metric": f.title(), "score": getattr(s, f)} for f in SCORE_FIELDS]
+    return pd.DataFrame([
+        {
+            "metric": f.title(),
+            "score": getattr(s, f).score,
+            "observation": getattr(s, f).observation,
+        }
+        for f in CRAFT_FIELDS
+    ])
+
+
+def initial_state(topic: str, brief) -> dict:
+    """
+    Seed every channel in LinkedInState.
+
+    generate_node overwrites most of these on the first tick, but seeding
+    them explicitly means a mismatch between this file and the workflow
+    fails here rather than somewhere mid-run.
+    """
+    return {
+        "topic": topic,
+        "brief": brief.model_dump(),
+        "post": "",
+
+        "evaluation": None,
+        "reflection": None,
+        "verdict": None,
+        "decision": None,
+
+        "iteration": 0,
+        "repairs_used": 0,
+
+        "current_craft": 0.0,
+        "previous_craft": -1.0,
+
+        "best_post": "",
+        "best_verdict": None,
+        "best_evaluation": None,
+        "best_iteration": 0,
+    }
+
+
+def build_brief(answers: list[Answer], was_probed: bool = False) -> None:
+    """Synthesise the brief, record it, and move to review. Shared by the
+    three paths into the brief phase - unprobed, probed, and skipped."""
+    with st.spinner("Understanding your angle..."):
+        st.session_state.brief = finish_interview(
+            USER_ID, st.session_state.topic, answers
+        )
+
+    st.session_state.brief_id = save_brief(
+        USER_ID, st.session_state.brief, answers, was_probed
     )
+
+    st.session_state.phase = "brief"
+    st.rerun()
 
 
 st.session_state.setdefault("phase", "topic")
 st.title("🚀 LinkedInForge")
 
 
-# ---------------------------------------------------------------- PHASE 1
+# ---------------------------------------------------------------- TOPIC
 if st.session_state.phase == "topic":
-    st.caption("Step 1 of 3 — what are you writing about?")
+    st.caption("Step 1 — what are you writing about?")
 
     topic = st.text_input(
         "Topic",
@@ -55,81 +178,189 @@ if st.session_state.phase == "topic":
         st.rerun()
 
 
-# ---------------------------------------------------------------- PHASE 2
+# ---------------------------------------------------------------- ANSWERS
 elif st.session_state.phase == "answers":
-    st.caption("Step 2 of 3 — your actual views")
+    st.caption("Step 2 — your actual views")
     st.subheader(st.session_state.topic)
-    st.info("Short answers are fine. Specifics matter more than polish.")
+    st.info(
+        "Short answers are fine. Specifics matter more than polish — numbers, "
+        "names, and what actually happened are what stop the post sounding "
+        "generic."
+    )
 
-    answers = []
-    for q in st.session_state.questions.questions:
-        st.markdown(f"**{q.text}**")
-        st.caption(q.why)
-        text = st.text_area(
-            q.text,
-            key=f"ans_{q.id}",
-            placeholder=q.placeholder,
-            label_visibility="collapsed",
-            height=90,
-        )
-        answers.append(
-            Answer(question_id=q.id, question_text=q.text, answer=text)
-        )
+    # Note: this is saved to a local variable 'answers'
+    answers = collect_answers(st.session_state.questions.questions)
 
     filled = sum(1 for a in answers if a.answer.strip())
     st.progress(filled / len(answers), text=f"{filled} of {len(answers)} answered")
 
     col1, col2 = st.columns([1, 3])
     with col1:
-        if st.button("Start over", use_container_width=True):
-            reset()
+        # If they skip the probe, we just build the brief with their current answers
+        if st.button("Skip to brief", use_container_width=True):
+            build_brief(answers)          
+
+    with col2:
+        # If they continue, we save their answers, generate probe questions, and move to the probe phase
+        if st.button("Continue", type="primary", use_container_width=True):
+            st.session_state.answers = answers  # Save to session state for later!
+            
+            with st.spinner("Analyzing answers for follow-ups..."):
+                st.session_state.probe_questions = probe_interview(
+                    USER_ID, st.session_state.topic, answers
+                )
+
+            if st.session_state.probe_questions.questions:
+                st.session_state.phase = "probe"
+                st.rerun()
+            else:
+                build_brief(answers)
+
+
+# ---------------------------------------------------------------- PROBE
+elif st.session_state.phase == "probe":
+    st.caption("One more thing")
+    st.subheader("A couple of follow-ups")
+    st.info(
+        "Some answers were a little general. These are the specifics that "
+        "will keep the post from sounding like everyone else's. Skip any "
+        "you'd rather not answer."
+    )
+
+    # Collect the new follow-up answers
+    probe_answers = collect_answers(st.session_state.probe_questions.questions)
+
+    st.divider()
+    col1, col2 = st.columns([1, 2])
+
+    with col1:
+        # If they skip, build the brief using only the first round of answers
+        if st.button("Skip these", use_container_width=True):
+            build_brief(st.session_state.answers)
+
+    with col2:
+        # If they continue, merge the first round of answers with the probe answers
+        if st.button("Continue", type="primary", use_container_width=True):
+            build_brief(st.session_state.answers + probe_answers, was_probed=True)
+
+# ---------------------------------------------------------------- BRIEF
+elif st.session_state.phase == "brief":
+    brief = st.session_state.brief
+
+    st.caption("Step 3 — check this before we write")
+    st.subheader("The angle")
+    st.markdown(
+        "Everything below comes from your answers. Nothing else can appear "
+        "in the post — if the angle is wrong, fix it here rather than "
+        "rewriting the post later."
+    )
+
+    render_brief(brief)
+
+    gaps = brief.thin_fields()
+
+    if not brief.evidence:
+        st.error(
+            "**This brief has no first-hand experience in it.**\n\n"
+            "The writer would have nothing to draw on and would invent "
+            "specifics, which the faithfulness check then rejects. That "
+            "cycle costs several minutes and produces a post you cannot "
+            "publish.\n\n"
+            "Go back and answer at least one question with something that "
+            "actually happened — a project, a decision, a thing that broke."
+        )
+
+        if st.button("Back to answers", type="primary", use_container_width=True):
+            st.session_state.phase = "answers"
+            st.rerun()
+
+        st.stop()
+
+    if gaps:
+        lines = "\n".join(f"- {g}" for g in gaps)
+        st.info(f"The brief is usable, but these would strengthen it:\n\n{lines}")
+
+    st.divider()
+
+    col1, col2 = st.columns([1, 2])
+
+    with col1:
+        if st.button("Back to answers", use_container_width=True):
+            st.session_state.phase = "answers"
             st.rerun()
 
     with col2:
-        if st.button("Build brief & write post", type="primary",
-                     disabled=filled == 0, use_container_width=True):
-
-            with st.spinner("Understanding your angle..."):
-                brief = finish_interview(USER_ID, st.session_state.topic, answers)
-            st.session_state.brief = brief
-
-            with st.spinner("Generating and refining (this takes a minute)..."):
-                st.session_state.result = workflow_app.invoke({
-                    "topic": st.session_state.topic,
-                    "brief": brief.model_dump(),
-                    "post": "",
-                    "evaluation": None,
-                    "reflection": None,
-                    "iteration": 0,
-                    "done": False,
-                    "previous_hook": 0,
-                    "previous_engagement": 0,
-                })
+        if st.button("Write the post", type="primary", use_container_width=True):
+            try:
+                with st.spinner("Generating and refining (this takes a minute)..."):
+                    st.session_state.result = workflow_app.invoke(
+                        initial_state(st.session_state.topic, brief)
+                    )
+            except Exception as e:
+                st.error(
+                    "Something went wrong while generating your post. Your "
+                    "interview and brief are still saved — you can try again."
+                )
+                st.exception(e)
+                st.stop()
+            save_run(st.session_state.get("brief_id"), st.session_state.result)
 
             st.session_state.phase = "result"
             st.rerun()
 
 
-# ---------------------------------------------------------------- PHASE 3
+# ---------------------------------------------------------------- RESULT
 else:
     result = st.session_state.result
     brief = st.session_state.brief
-    evaluation = result["evaluation"]
+    evaluation = result.get("evaluation")
+    verdict = result.get("verdict")
+    decision = result.get("decision")
+
+    if evaluation is None or verdict is None:
+        st.error("Evaluation failed — showing the unevaluated draft.")
+        if decision is not None:
+            st.caption(decision.reason)
+        st.text_area("Draft", value=result.get("post", ""), height=400)
+        if st.button("Try again"):
+            reset()
+            st.rerun()
+        st.stop()
 
     col1, col2 = st.columns([3, 1])
+
     with col1:
-        st.success("Done")
+        if verdict.passes_faithfulness:
+            st.success("Done")
+        else:
+            st.error(
+                "No draft passed the faithfulness check. This post contains "
+                "material not supported by your brief — review every specific "
+                "claim before publishing."
+            )
+
     with col2:
         if st.button("Write another", use_container_width=True):
             reset()
             st.rerun()
 
-    m1, m2 = st.columns(2)
-    m1.metric("Iterations used", result["iteration"])
-    m2.metric("Faithfulness", f"{evaluation.scores.faithfulness}/10")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Craft score", f"{verdict.craft_score}/10")
+    m2.metric(
+        "Winning draft",
+        f"#{result['best_iteration']}",
+        help=f"Best of {result['iteration'] + 1} drafts generated",
+    )
+    m3.metric("Faithfulness", f"{verdict.faithfulness}/10")
 
-    if brief.is_thin():
-        st.warning("The brief was thin — the post likely leans on generic material.")
+    if decision is not None:
+        if result["best_iteration"] < result["iteration"]:
+            st.caption(
+                f"Stopped after draft #{result['iteration']}: {decision.reason} "
+                f"Returning draft #{result['best_iteration']}, which scored higher."
+            )
+        else:
+            st.caption(f"Stopped because: {decision.reason}")
 
     tab1, tab2, tab3, tab4 = st.tabs(
         ["📝 Final Post", "🎯 Your Brief", "📊 Evaluation", "📈 Scores"]
@@ -140,145 +371,33 @@ else:
                      label_visibility="collapsed")
 
     with tab2:
-        st.caption("This is what the generator was given. Check it matches what you meant.")
-        st.text(brief.to_prompt_block())
+        st.caption("The angle the post was written from.")
+        render_brief(brief)
 
+        with st.expander("Raw brief (what the agents saw)"):
+            st.code(brief.to_prompt_block())
+            
     with tab3:
+        claims = getattr(evaluation, "unsupported_claims", [])
+        if claims:
+            st.warning("Claims not supported by your brief:")
+            for c in claims:
+                st.markdown(f"- {c}")
+            st.divider()
         st.json(evaluation.model_dump())
 
     with tab4:
+        gate = "PASS" if verdict.passes_faithfulness else "FAIL"
+        st.metric("Faithfulness gate", f"{verdict.faithfulness}/10 — {gate}")
+        st.caption(evaluation.scores.faithfulness.observation)
+        st.divider()
+
+        st.metric("Weighted craft score", f"{verdict.craft_score}/10")
+
         df = scores_frame(evaluation)
-        fig = px.bar(df, x="score", y="metric", orientation="h", text="score",
-                     range_x=[0, 10])
+        fig = px.bar(
+            df, x="score", y="metric", orientation="h", text="score",
+            range_x=[0, 10], hover_data=["observation"],
+        )
         fig.update_layout(yaxis_title="", xaxis_title="Score", height=400)
         st.plotly_chart(fig, use_container_width=True)
-        
-
-# import streamlit as st
-# import pandas as pd
-# import plotly.express as px
-# from src.api.service import run_pipeline
-
-# st.set_page_config(
-#     page_title="LinkedIn AI Optimizer",
-#     page_icon="🚀",
-#     layout="wide"
-# )
-
-# st.title("🚀 LinkedInForge")
-
-# st.markdown(
-#     """
-# ### Multi-Agent LinkedIn Content Refinement System
-
-# Transform ideas into polished LinkedIn posts using an AI workflow designed for professional storytelling.
-
-# #### ⚙️ How it works
-
-# 1. ✍️ **Generate** an initial draft from your prompt
-# 2. 📊 **Evaluate** quality across multiple dimensions
-# 3. 🧠 **Reflect** on strengths and weaknesses
-# 4. 🔄 **Refine** the content through iterative improvements
-# 5. ✅ Deliver a high-quality LinkedIn-ready post
-
-# #### 📌 Evaluation Dimensions
-
-# - Hook
-# - Clarity
-# - Engagement
-# - Authenticity
-# - Professionalism
-# - Structure
-# - Faithfulness
-
-# """
-# )
-
-# topic = st.text_area(
-#     "Topic / Prompt",
-#     height=200,
-#     placeholder="""
-# Example:
-
-# I got promoted to Engineering Manager after 5 years as a software engineer.
-# Write a LinkedIn post about this achievement.
-# """
-# )
-
-
-# generate = st.button(
-#     "🚀 Generate & Optimize",
-#     use_container_width=True
-# )
-
-# if generate:
-
-#     if not topic.strip():
-#         st.warning("Please enter a topic.")
-#         st.stop()
-
-#     with st.spinner("Optimizing your LinkedIn post..."):
-
-#         result = run_pipeline(topic)
-
-#     st.success("Optimization completed!")
-
-#     post = result["post"]
-#     evaluation = result["evaluation"]
-#     reflection = result["reflection"]
-#     iteration = result["iteration"]
-
-#     scores_df = pd.DataFrame(result["scores"])
-
-#     st.metric(
-#         label="Iterations Used",
-#         value=iteration
-#     )
-
-#     tab1, tab2, tab3, tab4 = st.tabs(
-#         [
-#             "📝 Final Post",
-#             "📊 Evaluation",
-#             "🧠 Reflection",
-#             "📈 Scores"
-#         ]
-#     )
-
-#     with tab1:
-
-#         st.subheader("Final LinkedIn Post")
-
-#         st.text_area("",value=post,height=350)
-
-#     with tab2:
-
-#         st.subheader("Evaluation Report")
-
-#         st.json(evaluation)
-
-#     with tab3:
-
-#         st.subheader("Reflection Plan")
-
-#         st.json(reflection)
-
-#     with tab4:
-
-#         st.subheader("Quality Scores")
-
-#         fig = px.bar(
-#             scores_df,
-#             x="score",
-#             y="metric",
-#             orientation="h",
-#             text="score",
-#             title="Evaluation Scores"
-#         )
-
-#         fig.update_layout(yaxis_title="",xaxis_title="Score",height=400)
-
-#         st.plotly_chart(fig,use_container_width=True)
-
-#         st.dataframe(scores_df,use_container_width=True)
-
-

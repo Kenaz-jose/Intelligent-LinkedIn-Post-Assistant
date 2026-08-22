@@ -9,11 +9,13 @@ from src.prompts.evaluator import EVALUATOR_PROMPT
 
 load_dotenv()
 
+
 class EvaluatorAgent:
     """
     Evaluates the quality of a LinkedIn post.
     Returns: EvaluationResult
     """
+
     def __init__(
         self,
         model_name: str = "meta/llama-3.1-70b-instruct",
@@ -24,24 +26,21 @@ class EvaluatorAgent:
             temperature=temperature,
             api_key=os.getenv("NVIDIA_API_KEY"),
             max_retries=1,
-            timeout=30
+            timeout=60,
         )
 
-        # Create the JSON parser using your Pydantic schema
         self.parser = PydanticOutputParser(pydantic_object=EvaluationResult)
 
-        # Inject formatting instructions into the prompt
         self.prompt = ChatPromptTemplate.from_template(
             EVALUATOR_PROMPT + "\n\n{format_instructions}"
         )
 
-        # The new chain pipes output straight into the parser
         self.chain = self.prompt | self.llm | self.parser
 
-    def invoke(self, post: str, user_prompt: str) -> EvaluationResult:
+    def invoke(self, post: str, brief: str) -> EvaluationResult:
         result = self.chain.invoke({
             "post": post,
-            "user_prompt": user_prompt,
-            "format_instructions": self.parser.get_format_instructions()
+            "brief": brief,
+            "format_instructions": self.parser.get_format_instructions(),
         })
         return result

@@ -12,3 +12,6 @@ huggingface_hub==0.24.6
 streamlit==1.47.1
 plotly==6.2.0
 python-dotenv==1.0.1
+sqlalchemy>=2.0.30     
+psycopg[binary]>=3.2.1 
+alembic>=1.13.0        

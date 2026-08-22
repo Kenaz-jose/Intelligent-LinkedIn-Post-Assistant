@@ -36,7 +36,7 @@ class BriefAgent:
             temperature=temperature,
             api_key=os.getenv("NVIDIA_API_KEY"),
             max_retries=1,
-            timeout=30,
+            timeout=60,
         )
 
         self.prompt = ChatPromptTemplate.from_template(BRIEF_PROMPT)
