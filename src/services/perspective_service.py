@@ -1,11 +1,41 @@
+import logging
 from src.agents.brief import BriefAgent
 from src.agents.interview import InterviewerAgent
 from src.schemas.perspective import Answer, PerspectiveBrief, QuestionSet
 from src.store.memory_store import get_memory, save_memory
-from src.utils.answer_quality import thin_answers
+#from src.utils.answer_quality import thin_answers
+from src.agents.quality import AnswerQualityAgent
+
+logger = logging.getLogger(__name__)
 
 _interviewer = InterviewerAgent()
 _brief_agent = BriefAgent()
+_quality_agent = AnswerQualityAgent()
+
+
+def _get_thin_answers(answers: list[Answer]) -> list[Answer]:
+    """
+    Passes each answer through the SLM quality agent to determine
+    if it lacks concrete evidence and requires a follow-up.
+    """
+    thin = []
+    for item in answers:
+        if not item.answer.strip():
+            continue
+            
+        assessment = _quality_agent.assess(
+            question=item.question_text, 
+            answer=item.answer
+        )
+        
+        if assessment.is_thin:
+            logger.info(f"Flagged Question: '{item.question_text[:40]}...'")
+            logger.info(f"SLM Reason: {assessment.reason}")
+
+            item.slm_feedback = assessment.reason
+            thin.append(item)
+            
+    return thin
 
 
 def probe_interview(user_id: str,topic: str, answers: list[Answer], n: int = 2) -> QuestionSet:
@@ -24,12 +54,13 @@ def probe_interview(user_id: str,topic: str, answers: list[Answer], n: int = 2) 
     not from long-term memory. Memory shapes which questions get asked in
     the first round; this round only digs into what was already said.
     """
-    thin = thin_answers(answers)
+    
+    thin = _get_thin_answers(answers)
 
     if not thin:
         return QuestionSet()
 
-    return interviewer.probe(topic, answers, thin, n=n)
+    return _interviewer.probe(topic, answers, thin, n=n)
 
 
 def start_interview(user_id: str, topic: str, n: int = 4) -> QuestionSet:
@@ -48,11 +79,7 @@ def start_interview(user_id: str, topic: str, n: int = 4) -> QuestionSet:
     )
 
 
-def finish_interview(
-    user_id: str,
-    topic: str,
-    answers: list[Answer],
-) -> PerspectiveBrief:
+def finish_interview(user_id: str,topic: str,answers: list[Answer],) -> PerspectiveBrief:
     """
     Step 2. Called when the user submits their answers.
 

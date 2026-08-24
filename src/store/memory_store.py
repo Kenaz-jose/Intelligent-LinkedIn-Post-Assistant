@@ -57,6 +57,7 @@ def get_memory(user_id: str) -> UserMemory:
 
     except SQLAlchemyError as exc:
         print(f"[memory_store] read failed, continuing without memory: {exc}")
+        logging.exception("Memory read failed continuing without memory: {exc}")
         return UserMemory(user_id=user_id)
 
 
@@ -104,14 +105,16 @@ def save_memory(memory: UserMemory) -> None:
     except SQLAlchemyError as exc:
         print(f"[memory_store] write failed, memory not saved: {exc}")
 
+"""
 
+"""
 def reset_memory(user_id: str) -> None:
     """Clear one user's memory. Cascade deletes the memory rows."""
     try:
         with SessionLocal() as session:
             user = session.scalar(select(User).where(User.external_id == user_id))
             if user:
-                session.delete(user)
+                session.execute(select(Memory).where(Memory.user_id == user.id).delete())
                 session.commit()
     except SQLAlchemyError as exc:
         print(f"[memory_store] reset failed: {exc}")

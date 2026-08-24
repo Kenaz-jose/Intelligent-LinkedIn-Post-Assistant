@@ -24,11 +24,7 @@ class InterviewerAgent:
     same four safe questions for every topic.
     """
 
-    def __init__(
-        self,
-        model_name: str = "meta/llama-3.1-70b-instruct",
-        temperature: float = 0.8,
-    ):
+    def __init__(self, model_name: str = "meta/llama-3.1-70b-instruct", temperature: float = 0.8):
         self.llm = ChatNVIDIA(
             model=model_name,
             temperature=temperature,
@@ -54,41 +50,32 @@ class InterviewerAgent:
             | StrOutputParser()
         )
 
-
     @staticmethod
-    def _format_answers(answers: list[Answer]) -> str:
-        """Question-and-answer pairs as prompt text. Blank answers are
-        marked explicitly - an unanswered question is different from a
-        vague one, and the model should be able to tell them apart."""
+    def _format_answers(answers: list[Answer], include_feedback: bool = False) -> str:
+        """
+        Question-and-answer pairs as prompt text. 
+        Blank answers are marked explicitly. If include_feedback is True,
+        appends the SLM's reasoning so the agent can use it to coach the user.
+        """
         if not answers:
             return "(nothing answered)"
 
         blocks = []
         for a in answers:
             response = a.answer.strip() or "(skipped)"
-            blocks.append(f"Q: {a.question_text}\nA: {response}")
+            block = f"Q: {a.question_text}\nA: {response}"
+            
+            # Inject the SLM feedback if it exists and is requested
+            if include_feedback and getattr(a, "slm_feedback", None):
+                block += f"\nSystem Feedback: {a.slm_feedback}"
+                
+            blocks.append(block)
 
         return "\n\n".join(blocks)
 
-    def probe(
-        self,
-        topic: str,
-        answers: list[Answer],
-        thin: list[Answer],
-        n: int = 2,
-    ) -> QuestionSet:
+    def probe(self, topic: str, answers: list[Answer], thin: list[Answer], n: int = 2) -> QuestionSet:
         """
         One follow-up round on the thinnest answers.
-
-        Returns an empty QuestionSet when nothing needs asking, when the
-        model declines to ask, or when it fails. All three cases mean the
-        same thing to the caller: move on to the brief.
-
-        This is the opposite fallback from invoke(). A failed first round
-        leaves the user with nothing, so fixed questions are better than
-        none. A failed probe just means the author keeps the answers they
-        already gave, and inventing questions to fill the gap would be
-        worse than skipping it.
         """
         if not thin:
             return QuestionSet()
@@ -96,8 +83,8 @@ class InterviewerAgent:
         try:
             raw = self.probe_chain.invoke({
                 "topic": topic,
-                "all_answers": self._format_answers(answers),
-                "thin_answers": self._format_answers(thin),
+                "all_answers": self._format_answers(answers, include_feedback=False),
+                "thin_answers": self._format_answers(thin, include_feedback=True),
                 "n": n,
             })
 
@@ -116,19 +103,9 @@ class InterviewerAgent:
             print(f"[InterviewerAgent] probe failed: {exc}")
             return QuestionSet()
 
-            
-    def invoke(
-        self,
-        topic: str,
-        memory_block: str = "(First interview with this person — nothing known yet)",
-        n: int = 4,
-    ) -> QuestionSet:
+    def invoke(self, topic: str, memory_block: str = "(First interview with this person — nothing known yet)", n: int = 4) -> QuestionSet:
         """
         Returns a QuestionSet. Never raises.
-
-        If the model fails to produce valid JSON twice, we fall back
-        to a fixed set of questions. A weaker interview is acceptable;
-        a dead-ended user is not.
         """
         for attempt in range(2):
             try:
@@ -140,8 +117,6 @@ class InterviewerAgent:
                 question_set = QuestionSet.model_validate(extract_json(raw))
 
                 if question_set.questions:
-                    # Renumber so ids are always q1..qn regardless of what
-                    # the model returned. Answers are matched on these ids.
                     for i, question in enumerate(question_set.questions[:n], start=1):
                         question.id = f"q{i}"
                     question_set.questions = question_set.questions[:n]
@@ -156,9 +131,6 @@ class InterviewerAgent:
     def _fallback(topic: str, n: int) -> QuestionSet:
         """
         Fixed questions used when the model fails.
-
-        These are deliberately the four angles the prompt asks for:
-        experience, disagreement, specifics, audience.
         """
         questions = [
             InterviewQuestion(

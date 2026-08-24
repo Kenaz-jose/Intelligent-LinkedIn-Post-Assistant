@@ -97,6 +97,7 @@ class Answer(BaseModel):
     question_id: str
     question_text: str = ""
     answer: str = ""
+    slm_feedback: str | None = None
 
 """
  PERSPECTIVE LAYER

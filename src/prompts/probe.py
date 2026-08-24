@@ -13,6 +13,7 @@ WHAT THEY SAID ALREADY
 
 THE ANSWERS THAT NEED FOLLOW-UP
 {thin_answers}
+(Note: The 'System Feedback' provided for each answer tells you exactly what concrete detail is missing).
 
 HOW TO ASK
 - Quote their own words back, then ask for the concrete detail underneath.
@@ -25,6 +26,11 @@ HOW TO ASK
 - Ask what happened, not what they think. They have already told you what
   they think - that is not the part that is missing.
 - Keep each question to one sentence.
+
+COACHING THE USER (THE 'why' FIELD)
+- You MUST use the 'why' field to politely relay the 'System Feedback' to the user.
+- Translate the strict system feedback into a helpful, encouraging writing tip. 
+- For example, if the feedback is "Lacks specific performance metrics", your 'why' could be: "Adding your exact metrics proves your technical depth."
 
 WHAT NOT TO DO
 - Do not ask them to "elaborate", "expand on", or "tell me more about"
@@ -48,9 +54,9 @@ Return ONLY valid JSON. Do not wrap it in markdown code blocks.
   "questions": [
     {{
       "id": "p1",
-      "text": "You mentioned the rollout took three attempts - what went wrong on the first two?",
-      "why": "The specific failures are what make this worth reading.",
-      "placeholder": "The first one timed out under load, the second broke auth..."
+      "text": "You mentioned the prediction pipeline worked well - what was your final F1-score?",
+      "why": "Including exact model metrics makes your claim verifiable and credible.",
+      "placeholder": "I achieved an F1-score of 0.86 using an ANN architecture."
     }}
   ]
 }}

@@ -5,6 +5,7 @@ Runs before the brief is synthesised, while the answers can still be
 improved by asking again. No LLM call - this decides whether asking a
 follow-up is worth an LLM call, so it must be cheaper than one.
 """
+import string
 
 VAGUE_OPENERS = (
     "i think", "i guess", "i believe", "it depends", "generally",
@@ -48,7 +49,9 @@ def answer_is_thin(text: str) -> bool:
         return True
 
     has_number = any(c.isdigit() for c in text)
-    has_first_person = bool(FIRST_PERSON & set(words))
+    clean_words = {word.strip(string.punctuation) for word in words}
+    has_first_person = bool(FIRST_PERSON & clean_words)
+
 
     if len(words) < 10 and not (has_number or has_first_person):
         return True

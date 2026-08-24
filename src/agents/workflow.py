@@ -8,14 +8,7 @@ from src.agents.evaluator import EvaluatorAgent
 from src.agents.reflection import ReflectionAgent
 from src.agents.refiner import RefinerAgent
 from src.schemas.perspective import PerspectiveBrief
-from src.evaluation.policy import (
-    Decision,
-    Verdict,
-    judge,
-    decide,
-    is_better,
-    MAX_ITERATIONS,
-)
+from src.evaluation.policy import Decision,Verdict,judge,decide,is_better,MAX_ITERATIONS
 
 class LinkedInState(TypedDict):
     topic: str

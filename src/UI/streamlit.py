@@ -31,14 +31,22 @@ def reset():
         st.session_state.pop(key, None)
 
 
-def collect_answers(questions) -> list[Answer]:
+def collect_answers(questions, is_probe: bool = False) -> list[Answer]:
     """Render a question list and return the answers. Widget keys are the
     question ids, so first-round (q1..qn) and probe (p1..pn) answers can
     never overwrite each other."""
     answers = []
     for q in questions:
         st.markdown(f"**{q.text}**")
-        st.caption(q.why)
+        
+        # --- SLM FEEDBACK UI INTEGRATION ---
+        if is_probe:
+            # Highlight the AI's coaching tip derived from the SLM feedback
+            st.info(f"💡 **Tip:** {q.why}")
+        else:
+            # Standard subtle caption for initial questions
+            st.caption(q.why)
+            
         text = st.text_area(
             q.text,
             key=f"ans_{q.id}",
@@ -228,7 +236,7 @@ elif st.session_state.phase == "probe":
     )
 
     # Collect the new follow-up answers
-    probe_answers = collect_answers(st.session_state.probe_questions.questions)
+    probe_answers = collect_answers(st.session_state.probe_questions.questions, is_probe=True)
 
     st.divider()
     col1, col2 = st.columns([1, 2])

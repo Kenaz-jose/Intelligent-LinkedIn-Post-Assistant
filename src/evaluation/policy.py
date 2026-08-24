@@ -76,12 +76,7 @@ def judge(evaluation: EvaluationResult) -> Verdict:
     )
 
 
-def decide(
-    verdict: Verdict,
-    iteration: int,
-    repairs_used: int,
-    previous_craft: Optional[float] = None,
-) -> Decision:
+def decide(verdict: Verdict,iteration: int,repairs_used: int,previous_craft: Optional[float] = None) -> Decision:
     """Faithfulness is checked before craft and before every budget, because
     a fabricating post is not a lower-quality post - it is the wrong post."""
 
