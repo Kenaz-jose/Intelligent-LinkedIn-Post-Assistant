@@ -194,6 +194,7 @@ class PerspectiveBrief(BaseModel):
     details: list[str] = Field(default_factory=list)
     audience: str = ""
     takeaway: str = ""
+    
 
     def to_prompt_block(self) -> str:
         """

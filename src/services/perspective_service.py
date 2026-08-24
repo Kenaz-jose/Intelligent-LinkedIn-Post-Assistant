@@ -3,7 +3,6 @@ from src.agents.brief import BriefAgent
 from src.agents.interview import InterviewerAgent
 from src.schemas.perspective import Answer, PerspectiveBrief, QuestionSet
 from src.store.memory_store import get_memory, save_memory
-#from src.utils.answer_quality import thin_answers
 from src.agents.quality import AnswerQualityAgent
 
 logger = logging.getLogger(__name__)
@@ -71,7 +70,7 @@ def start_interview(user_id: str, topic: str, n: int = 4) -> QuestionSet:
     the user may abandon the interview, and an abandoned interview
     should leave no trace.
     """
-    memory = get_memory(user_id)
+    memory = get_memory(user_id,topic)
     return _interviewer.invoke(
         topic=topic,
         memory_block=memory.to_prompt_block(topic),
@@ -87,7 +86,7 @@ def finish_interview(user_id: str,topic: str,answers: list[Answer],) -> Perspect
     updated after the brief succeeds — BriefAgent raises on failure,
     so a broken run leaves memory untouched.
     """
-    memory = get_memory(user_id)
+    memory = get_memory(user_id,topic)
 
     brief = _brief_agent.invoke(
         topic=topic,

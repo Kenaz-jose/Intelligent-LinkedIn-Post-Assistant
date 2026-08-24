@@ -5,6 +5,7 @@ Same four functions as the JSON version, same signatures, same guarantee:
 a storage failure never stops someone writing a post. The worst case is an
 interview that asks something it has asked before.
 """
+from langchain_nvidia_ai_endpoints import NVIDIAEmbeddings
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
@@ -17,6 +18,7 @@ from src.schemas.perspective import UserMemory
 # How many items of each kind to load. The database keeps everything; this
 # caps what reaches the prompt. Replaces the list slicing in absorb().
 RECALL_LIMIT = 20
+embedder = NVIDIAEmbeddings(model="nvidia/llama-nemotron-embed-1b-v2")
 
 
 def _kind_contents(session, user_id, kind: str, limit: int) -> list[str]:
@@ -25,10 +27,10 @@ def _kind_contents(session, user_id, kind: str, limit: int) -> list[str]:
     rows = session.scalars(
         select(Memory.content)
         .where(Memory.user_id == user_id, Memory.kind == kind)
-        .order_by(Memory.created_at.desc())
+        .order_by(Memory.embedding.cosine_distance(search_vector))
         .limit(limit)
     ).all()
-    return list(reversed(rows))
+    return list(rows)
 
 
 def get_memory(user_id: str) -> UserMemory:
@@ -40,6 +42,8 @@ def get_memory(user_id: str) -> UserMemory:
     need to check for None.
     """
     try:
+
+        search_vector = embedder.embed_query(current_topic)
         with SessionLocal() as session:
             user = session.scalar(select(User).where(User.external_id == user_id))
 
@@ -94,6 +98,10 @@ def save_memory(memory: UserMemory) -> None:
             ]
 
             if rows:
+                texts_to_embed = [row["content"] for row in rows]
+                vectors = embedder.embed_documents(texts_to_embed)
+                for row, vector in zip(rows, vectors):
+                    row["embedding"] = vector
                 session.execute(
                     insert(Memory).values(rows).on_conflict_do_nothing(
                         constraint="memory_unique"
