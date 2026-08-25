@@ -1,12 +1,4 @@
-import os
-from dotenv import load_dotenv
-load_dotenv(override=True)
+from langchain_nvidia_ai_endpoints import NVIDIAEmbeddings
 
-print("Tracing Enabled:", os.getenv("LANGCHAIN_TRACING_V2"))
-print("API Key loaded:", bool(os.getenv("LANGCHAIN_API_KEY")))
-
-from langsmith import Client
-client = Client()
-# This will test your connection and list your projects
-projects = list(client.list_projects())
-print("Connected successfully! Projects found:", [p.name for p in projects])
+# This will print the exact strings NVIDIA expects you to use
+print(NVIDIAEmbeddings().available_models)

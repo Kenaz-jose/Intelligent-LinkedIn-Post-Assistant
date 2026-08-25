@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
+from src.agents.curator import get_curated_topics
 from src.agents.workflow import app as workflow_app
 from src.schemas.perspective import Answer
 from src.services.perspective_service import (
@@ -21,7 +22,7 @@ CRAFT_FIELDS = [
     "professionalism", "structure",
 ]
 
-st.set_page_config(page_title="LinkedInForge", page_icon="🚀", layout="wide")
+st.set_page_config(page_title="Spotlight", page_icon="💫", layout="wide")
 
 
 def reset():
@@ -172,29 +173,82 @@ st.title("🚀 LinkedInForge")
 if st.session_state.phase == "topic":
     st.caption("Step 1 — what are you writing about?")
 
+    # --- NEW CONTENT DISCOVERY UI ---
+    st.markdown("### 💡 Need inspiration?")
+    categories = [
+        "AI & Deep Learning", 
+        "Quantum Mechanics", 
+        "Evolutionary Biology", 
+        "Productivity & Deep Work", 
+        "World Affairs"
+    ]
+    
+    # st.pills is great for this, available in newer Streamlit versions
+    selected_category = st.pills("Select a domain to see trending news:", categories)
+    
+    # We define the tone selector early so it applies to both UI paths
+    selected_tone = st.selectbox(
+        "Select Post Tone & Vibe:",
+        [
+            "Direct, punchy, and technical (like a senior engineer)",
+            "Conversational, casual, and highly relatable (story-driven)",
+            "Sharp, contrarian, and bold (challenging conventional wisdom)",
+            "Witty, sarcastic, and funny (uses dry humor and developer self-deprecation without losing technical accuracy)",
+            "Academic, measured, and deeply analytical"
+        ]
+    )
+
+    # 1. THE CURATOR PATH (News API)
+# 1. THE CURATOR PATH (News API)
+    if selected_category:
+        with st.spinner(f"Curating trending topics in {selected_category}..."):
+            try:
+                curated_data = get_curated_topics(selected_category)
+                
+                # --- GUARD CLAUSE TO PREVENT NONE CRASHES ---
+                if curated_data and curated_data.articles:
+                    st.markdown(f"**Trending in {selected_category}:**")
+                    
+                    # Render the cards
+                    for idx, article in enumerate(curated_data.articles):
+                        with st.container(border=True):
+                            st.subheader(article.headline)
+                            st.write(article.summary)
+                            
+                            unique_key = f"{article.url}_{idx}"
+                            # The handoff button
+                            if st.button("Write about this", key=unique_key, type="secondary"):
+                                st.session_state.topic = f"{article.headline}: {article.summary}"
+                                st.session_state.tone = selected_tone
+                                
+                                with st.spinner("Working out what to ask you..."):
+                                    st.session_state.questions = start_interview(
+                                        USER_ID, st.session_state.topic, selected_tone
+                                    )
+                                st.session_state.phase = "answers"
+                                st.rerun()
+                else:
+                    st.warning("No articles were found for this category right now. Please try another category or enter your topic manually below.")
+                    
+            except Exception as e:
+                st.error("Could not fetch trending news right now. Try another category or enter manually.")
+                st.exception(e)
+
+    st.divider()
+
+    # 2. THE MANUAL PATH (Original UI)
+    st.markdown("### ✍️ Or enter your own topic")
     topic = st.text_input(
         "Topic",
         placeholder="Agentic engineering",
         help="Just the subject. You'll be asked for the details next.",
     )
 
-    selected_tone = st.selectbox(
-    "Select Post Tone & Vibe:",
-    [
-        "Direct, punchy, and technical (like a senior engineer)",
-        "Conversational, casual, and highly relatable (story-driven)",
-        "Sharp, contrarian, and bold (challenging conventional wisdom)",
-        "Witty, sarcastic, and funny (uses dry humor and developer self-deprecation without losing technical accuracy)",
-        "Academic, measured, and deeply analytical"
-    ]
-    )
-
     if st.button("Start interview", type="primary", use_container_width=True):
         if not topic.strip():
-            st.warning("Please enter a topic.")
+            st.warning("Please enter a topic or select a news article above.")
             st.stop()
         
-        # Save both topic and tone to session state
         st.session_state.topic = topic.strip()
         st.session_state.tone = selected_tone
 
@@ -203,7 +257,6 @@ if st.session_state.phase == "topic":
 
         st.session_state.phase = "answers"
         st.rerun()
-
 
 # ---------------------------------------------------------------- ANSWERS
 elif st.session_state.phase == "answers":
@@ -219,7 +272,10 @@ elif st.session_state.phase == "answers":
     answers = collect_answers(st.session_state.questions.questions)
 
     filled = sum(1 for a in answers if a.answer.strip())
-    st.progress(filled / len(answers), text=f"{filled} of {len(answers)} answered")
+    
+    # Safely handle the progress bar division
+    total_questions = len(answers) if len(answers) > 0 else 1
+    st.progress(filled / total_questions, text=f"{filled} of {len(answers)} answered")
 
     col1, col2 = st.columns([1, 3])
     with col1:
@@ -228,9 +284,9 @@ elif st.session_state.phase == "answers":
             build_brief(answers)          
 
     with col2:
-        # If they continue, we save their answers, generate probe questions, and move to the probe phase
+        # If they continue, save their answers, generate probe questions, and move to probe phase
         if st.button("Continue", type="primary", use_container_width=True):
-            st.session_state.answers = answers  # Save to session state for later!
+            st.session_state.answers = answers  
             
             with st.spinner("Analyzing answers for follow-ups..."):
                 st.session_state.probe_questions = probe_interview(
@@ -337,7 +393,7 @@ elif st.session_state.phase == "brief":
 
 
 # ---------------------------------------------------------------- RESULT
-else:
+elif st.session_state.phase == "result":
     result = st.session_state.result
     brief = st.session_state.brief
     evaluation = result.get("evaluation")
