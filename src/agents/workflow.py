@@ -1,8 +1,9 @@
-from typing import TypedDict, Optional
+from typing import TypedDict, Optional, List, Dict
 
-from langgraph.graph import StateGraph, END
+from langgraph.graph import StateGraph, END, START
 
 from src.utils.logger import logger
+from src.agents.hook import HookAgent
 from src.agents.generator import GeneratorAgent
 from src.agents.evaluator import EvaluatorAgent
 from src.agents.reflection import ReflectionAgent
@@ -14,6 +15,8 @@ class LinkedInState(TypedDict):
     topic: str
     brief: dict
     post: str
+    tone: str
+    alternative_tone: List[Dict[str, str]]
 
     evaluation: Optional[object]
     reflection: Optional[object]
@@ -28,10 +31,12 @@ class LinkedInState(TypedDict):
     previous_craft: float
 
     best_post: str
+    best_alternative_hooks: List[Dict[str, str]]
     best_verdict: Optional[object]
     best_evaluation: Optional[object]
     best_iteration: int
 
+hook_agent = HookAgent()
 generator_agent = GeneratorAgent()
 evaluator_agent = EvaluatorAgent()
 reflection_agent = ReflectionAgent()
@@ -48,8 +53,24 @@ def brief_block(state: LinkedInState) -> str:
     """
     return PerspectiveBrief.model_validate(state["brief"]).to_prompt_block()
 
+def generate_hooks_node(state: LinkedInState) -> dict:
+    """Parallel node that generates hooks."""
+    hooks = hook_agent.generate_hooks(
+        topic=state["topic"],
+        brief=state["brief"],
+        tone=state["tone"]
+    )
+    return {"alternative_hooks": hooks}
+
 def generate_node(state: LinkedInState):
-    post = generator_agent.invoke(brief_block(state))
+
+    brief = brief_block(state)
+    tone = state.get("tone", "Direct, punchy, and technical (like a senior engineer)")
+
+    post = generator_agent.invoke({
+        "brief": brief,
+        "tone": tone
+    })
 
     print("\n===== GENERATED POST =====")
     print(post)
@@ -143,13 +164,21 @@ def display_evaluation(evaluation, verdict: Verdict, decision: Decision):
 def evaluate_node(state: LinkedInState):
     """
     Evaluator observes, policy decides, best draft is recorded.
-
-    Best-draft recording happens here rather than on the exit path because
-    only this node sees every intermediate draft. A node placed after the
-    branches would only ever see the last one.
+    Now includes parallel hook filtering to ensure no hallucinated hooks reach the UI.
     """
+    # 1. Format the alternative hooks for the evaluator prompt
+    alt_hooks = state.get("alternative_hooks", [])
+    alt_hooks_text = "\n".join(
+        [f"Hook {i+1} ({h['angle']}): {h['text']}" for i, h in enumerate(alt_hooks)]
+    ) if alt_hooks else "None provided."
+
     try:
-        evaluation = evaluator_agent.invoke(state["post"], brief_block(state))
+        # 2. Pass the hooks into your evaluator agent
+        evaluation = evaluator_agent.invoke(
+            post=state["post"], 
+            brief=brief_block(state),
+            alternative_hooks=alt_hooks_text  
+        )
     except Exception as exc:
         logger.error(f"Evaluation failed: {exc}")
         print(f"\nEVALUATION FAILED: {exc}")
@@ -159,6 +188,21 @@ def evaluate_node(state: LinkedInState):
                 reason=f"Evaluation failed ({type(exc).__name__}). Returning best draft so far.",
             )
         }
+
+    # 3. FILTER OUT UNFAITHFUL HOOKS
+    valid_hooks = []
+    if alt_hooks and getattr(evaluation, "hook_evaluations", None):
+        # Match each hook to its evaluation score using zip
+        for hook, eval_result in zip(alt_hooks, evaluation.hook_evaluations):
+            if eval_result.is_faithful:
+                valid_hooks.append(hook)
+            else:
+                msg = f"\n[FILTER] Dropped unfaithful hook: '{hook['text']}'\nReason: {eval_result.reason}"
+                logger.info(msg)
+                print(msg)
+    else:
+        # If no evaluations returned for them, keep them
+        valid_hooks = alt_hooks
 
     verdict = judge(evaluation)
 
@@ -183,6 +227,7 @@ def evaluate_node(state: LinkedInState):
         "verdict": verdict,
         "decision": decision,
         "current_craft": verdict.craft_score,
+        "alternative_hooks": valid_hooks,  
     }
 
     if decision.repair_mode:
@@ -198,6 +243,7 @@ def evaluate_node(state: LinkedInState):
         update["best_verdict"] = verdict
         update["best_evaluation"] = evaluation
         update["best_iteration"] = state.get("iteration", 0)
+        update["best_alternative_hooks"] = valid_hooks  
     else:
         print(
             f"\nDraft not an improvement - keeping iteration "
@@ -430,15 +476,20 @@ def finalize_node(state: LinkedInState):
 
 graph = StateGraph(LinkedInState)
 
+graph.add_node("generate_hooks", generate_hooks_node)
 graph.add_node("generate", generate_node)
 graph.add_node("evaluate", evaluate_node)
 graph.add_node("reflect", reflect_node)
 graph.add_node("refine", refine_node)
 graph.add_node("finalize", finalize_node)
 
-graph.set_entry_point("generate")
+graph.add_edge(START, "generate")
+graph.add_edge(START, "generate_hooks")
+
 
 graph.add_edge("generate", "evaluate")
+graph.add_edge("generate_hooks", "evaluate")
+
 
 graph.add_conditional_edges(
     "evaluate",

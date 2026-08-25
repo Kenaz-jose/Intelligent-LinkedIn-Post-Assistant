@@ -30,12 +30,19 @@ The brief contains a THESIS: the author's actual claim. This is not background i
 TARGET AUDIENCE
 Write for professionals on LinkedIn, including software engineers, AI practitioners, students, recruiters, engineering managers, and technology enthusiasts. Assume readers are technically curious but appreciate clear, accessible writing.
 
-WRITING STYLE
-The post should be professional, authentic, conversational, insightful, concise, and easy to read.
-- Prefer simple language over buzzwords.
+WRITING STYLE & TONE (CRITICAL)
+You MUST adopt the following specific tone for this post:
+{tone}
+
+SPECIAL INSTRUCTION FOR HUMOR/WIT: 
+If a funny or sarcastic tone is selected, use dry developer self-deprecation, sharp observations about tooling pain, or witty phrasing. NEVER invent fake events, fake bugs, or fictional company disasters to make a joke. The humor must emerge entirely from framing the real technical facts provided in the brief.
+
+Additionally, adhere to these stylistic rules:
+- Prefer simple, punchy language over buzzwords or academic transitions (avoid "Furthermore", "Moreover", "Thus", "Additionally").
 - Avoid sounding like marketing copy.
 - Vary sentence lengths naturally.
 - Use active voice whenever possible.
+- Do not cram multiple technical details into a single list-like paragraph; let the narrative breathe.
 
 STRUCTURE
 Follow this structure exactly:
@@ -53,7 +60,7 @@ CONSTRAINTS
 - Do not use markdown (no bolding, italics, or headers).
 - Do not use bullet points.
 - Do not include a title.
-- BANNED PHRASES: Do not use "I'm excited to share...", "In today's fast-paced world...", "Game changer", "Revolutionary", "Let's dive in", "As we all know", "Unlock the power of", or "Leverage".
+- BANNED PHRASES: Do not use "I'm excited to share...", "In today's fast-paced world...", "Game changer", "Revolutionary", "Let's dive in", "As we all know", "Unlock the power of", "Leverage", "make or break", "cannot be overstated", "delve", or "I've seen firsthand".
 
 OUTPUT FORMAT
 Return ONLY the LinkedIn post text. Do not include explanations, notes, conversational filler, or commentary before or after the post.

@@ -8,7 +8,7 @@ from langchain_core.output_parsers import PydanticOutputParser
 from src.schemas.refiner import RefinerResult
 from src.prompts.refiner import REFINER_PROMPT
 
-load_dotenv()
+load_dotenv(override=True)
 
 class RefinerAgent:
     """

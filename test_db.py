@@ -1,14 +1,12 @@
-from src.evaluation.policy import Verdict, decide
+import os
+from dotenv import load_dotenv
+load_dotenv(override=True)
 
-cases = [
-    ("unfaithful, first try",  Verdict(8.0, 5, False, True), 0, 0, None,  "refine"),
-    ("unfaithful, budget out", Verdict(8.0, 5, False, True), 1, 2, None,  "invalid"),
-    ("repair damaged it",      Verdict(6.0, 5, False, False), 1, 1, 9.0,  "invalid"),
-    ("clean pass",             Verdict(8.0, 9, True, True),   0, 0, None, "ready"),
-    ("craft low, first try",   Verdict(6.0, 9, True, False),  0, 0, None, "refine"),
-    ("stagnant",               Verdict(6.0, 9, True, False),  1, 0, 6.5,  "ready"),
-]
+print("Tracing Enabled:", os.getenv("LANGCHAIN_TRACING_V2"))
+print("API Key loaded:", bool(os.getenv("LANGCHAIN_API_KEY")))
 
-for name, v, it, rep, prev, expected in cases:
-    got = decide(v, it, rep, prev)
-    print(f"{'ok ' if got and got.outcome == expected else 'FAIL'} {name}: {got.outcome if got else None}")
+from langsmith import Client
+client = Client()
+# This will test your connection and list your projects
+projects = list(client.list_projects())
+print("Connected successfully! Projects found:", [p.name for p in projects])

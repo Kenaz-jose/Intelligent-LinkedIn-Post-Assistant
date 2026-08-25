@@ -7,7 +7,7 @@ from langchain_core.output_parsers import PydanticOutputParser
 from src.schemas.evaluator import EvaluationResult
 from src.prompts.evaluator import EVALUATOR_PROMPT
 
-load_dotenv()
+load_dotenv(override=True)
 
 
 class EvaluatorAgent:
@@ -37,10 +37,11 @@ class EvaluatorAgent:
 
         self.chain = self.prompt | self.llm | self.parser
 
-    def invoke(self, post: str, brief: str) -> EvaluationResult:
+    def invoke(self, post: str, brief: str, alternative_hooks: str = "None provided.") -> EvaluationResult:
         result = self.chain.invoke({
             "post": post,
             "brief": brief,
             "format_instructions": self.parser.get_format_instructions(),
+            "alternative_hooks": alternative_hooks
         })
         return result

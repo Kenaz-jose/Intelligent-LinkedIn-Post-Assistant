@@ -12,7 +12,7 @@ from src.schemas.evaluator import EvaluationResult
 from src.prompts.reflection import REFLECTION_PROMPT
 from src.prompts.repair import REPAIR_PROMPT
 
-load_dotenv()
+load_dotenv(override=True)
 
 
 class ReflectionAgent:

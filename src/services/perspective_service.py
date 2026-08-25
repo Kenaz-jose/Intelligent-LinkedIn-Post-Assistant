@@ -11,6 +11,23 @@ _interviewer = InterviewerAgent()
 _brief_agent = BriefAgent()
 _quality_agent = AnswerQualityAgent()
 
+INITIAL_SUGGESTIONS = """
+- THE_EPIPHANY: Ask for the exact moment a concept "clicked".
+- THE_TRENCHES: Ask about the frustrating bugs or late-night debugging.
+- RABBIT_HOLE: Ask about a specific hyper-focused tangent.
+- THE_HACK: Ask about the clever duct-tape solution.
+- HOT_TAKE: Ask what popular advice in the community is actually garbage.
+- BIG_PICTURE: Zoom out and ask how this connects to the future of the field.
+"""
+
+PROBE_SUGGESTIONS = """
+- MISSING_METRIC: Use when a claim needs hard numbers, thresholds, or benchmarks (e.g., F1-scores, latency).
+- MISSING_IMPLEMENTATION: Use when the answer lacks the specific architecture, library, or engineering decision used.
+- MISSING_MECHANISM: Use when they state a concept but fail to explain the underlying logic of *how* or *why* it works.
+- MISSING_ANECDOTE: Use when they describe a struggle broadly but omit the specific error message, moment, or real-world friction.
+- MISSING_STAKE: Use when they explain a decision but fail to mention the risk, tradeoff, or what would have broken.
+- MISSING_TACTIC: Use when they mention a broad strategy or workflow, but fail to provide the exact, actionable steps.
+"""
 
 def _get_thin_answers(answers: list[Answer]) -> list[Answer]:
     """
@@ -37,7 +54,7 @@ def _get_thin_answers(answers: list[Answer]) -> list[Answer]:
     return thin
 
 
-def probe_interview(user_id: str,topic: str, answers: list[Answer], n: int = 2) -> QuestionSet:
+def probe_interview(user_id: str,topic: str, answers: list[Answer],tone: str, n: int = 2) -> QuestionSet:
     """
     One follow-up round on the thinnest answers.
 
@@ -59,10 +76,10 @@ def probe_interview(user_id: str,topic: str, answers: list[Answer], n: int = 2) 
     if not thin:
         return QuestionSet()
 
-    return _interviewer.probe(topic, answers, thin, n=n)
+    return _interviewer.probe(topic, answers, thin, suggested_categories=PROBE_SUGGESTIONS, n=n)
 
 
-def start_interview(user_id: str, topic: str, n: int = 4) -> QuestionSet:
+def start_interview(user_id: str, topic: str,tone: str, n: int = 4) -> QuestionSet:
     """
     Step 1. Called when the user submits a topic.
 
@@ -73,12 +90,14 @@ def start_interview(user_id: str, topic: str, n: int = 4) -> QuestionSet:
     memory = get_memory(user_id,topic)
     return _interviewer.invoke(
         topic=topic,
+        tone=tone,
         memory_block=memory.to_prompt_block(topic),
+        suggested_categories=INITIAL_SUGGESTIONS,
         n=n,
     )
 
 
-def finish_interview(user_id: str,topic: str,answers: list[Answer],) -> PerspectiveBrief:
+def finish_interview(user_id: str,topic: str,answers: list[Answer],tone: str) -> PerspectiveBrief:
     """
     Step 2. Called when the user submits their answers.
 
@@ -92,6 +111,7 @@ def finish_interview(user_id: str,topic: str,answers: list[Answer],) -> Perspect
         topic=topic,
         answers=answers,
         memory_block=memory.to_prompt_block(topic),
+        tone=tone
     )
 
     save_memory(memory.absorb(brief))

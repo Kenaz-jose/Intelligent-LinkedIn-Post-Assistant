@@ -12,7 +12,10 @@ AUTHOR'S BRIEF (the only permitted source of truth)
 GENERATED LINKEDIN POST
 {post}
 
-HOW TO SCORE
+ALTERNATIVE HOOKS (generated in parallel)
+{alternative_hooks}
+
+HOW TO SCORE THE MAIN POST
 For every dimension you must write the "observation" BEFORE the "score".
 
 The observation states what you actually found in the text - quote the specific
@@ -27,7 +30,7 @@ Judge the TEXT IN FRONT OF YOU, not the topic. Two drafts on the same subject
 should receive different scores if they read differently. Identical scores
 across different drafts means the evaluation was not performed.
 
-EVALUATION CRITERIA & SCORING RUBRIC
+EVALUATION CRITERIA & SCORING RUBRIC (FOR MAIN POST)
 Score each dimension 1-10 using these anchors. Do not average toward the middle. If a post is weak on a dimension, score it weak.
 
 1. HOOK - does the opening earn the second line?
@@ -76,6 +79,9 @@ Ask only this: does the post accurately express what the author actually believe
 Faithfulness is about PROVENANCE, not accuracy. A statement can be entirely
 true and still score low, if the author did not supply it.
 
+FAITHFULNESS EXCEPTION FOR METRICS:
+If the brief explicitly lists numbers, percentages, or quantitative thresholds under 'details', the generator is fully permitted to use those exact figures. Do not flag brief-backed statistics or metrics as unsupported claims.
+
 Test each specific claim: point to the line in the brief it came from. If you
 cannot, it is unsupported - even if it is correct, even if any expert would
 agree, even if it is common knowledge in the field.
@@ -94,18 +100,18 @@ The most common failure is addition, not contradiction.
 7-8   Everything traces back to the brief. Nothing invented.
 9-10  Fully grounded, and preserves the author's nuance - their hedges, reservations, and uncertainty survive intact.
 
-UNSUPPORTED CLAIMS
-For every claim in the post that does not trace back to the brief, copy the exact wording from the post into "unsupported_claims".
+UNSUPPORTED CLAIMS (MAIN POST ONLY)
+For every claim in the main post that does not trace back to the brief, copy the exact wording from the post into "unsupported_claims".
 - Copy verbatim. These snippets are used to locate the text for removal, so an approximation is useless.
-- Include invented specifics in particular: numbers, percentages, timelines, outcomes, client names, job titles, and stated emotions the author never expressed.
-- Include accurate domain knowledge the author never mentioned. Being true does not make it supported.
+- Include invented specifics in particular: numbers, percentages (unless explicitly provided in the brief's details/evidence), timelines, outcomes, client names, job titles, and stated emotions the author never expressed.
 - If nothing in the post is unsupported, return an empty list.
 - This list must be consistent with your faithfulness score. If you list unsupported claims, the faithfulness score cannot be 7 or above.
 
-SCORING RULES
-- Scores must always match the observation written above them.
-- Never assign high scores while describing major weaknesses.
-- Judge each dimension independently. A post can have an excellent hook and poor structure.
+ALTERNATIVE HOOKS EVALUATION (FAITHFULNESS CHECK)
+Evaluate each hook provided in the ALTERNATIVE HOOKS section:
+- If a hook invents a number, job title, company name, or fact not present in the brief, mark `is_faithful`: false.
+- If a hook is fully faithful and draws only on permitted brief information/framing, mark `is_faithful`: true.
+- If no alternative hooks were provided, return an empty list for `hook_evaluations`.
 
 IMPROVEMENT RULES
 - Only report improvements that would meaningfully change the post's impact.
@@ -176,6 +182,16 @@ are an example of the FORM, not of typical scores - use the full 1-10 range.
     }}
   ],
   "unsupported_claims": [],
+  "hook_evaluations": [
+    {{
+      "is_faithful": true,
+      "reason": "Grounded strictly in the author's described experience without inventing statistics."
+    }},
+    {{
+      "is_faithful": false,
+      "reason": "Claims a 50% speedup which is not mentioned in the brief's details."
+    }}
+  ],
   "feedback": "..."
 }}
 """

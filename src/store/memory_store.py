@@ -21,29 +21,30 @@ RECALL_LIMIT = 20
 embedder = NVIDIAEmbeddings(model="nvidia/llama-nemotron-embed-1b-v2")
 
 
-def _kind_contents(session, user_id, kind: str, limit: int) -> list[str]:
-    """Most recent items of one kind, returned oldest-first so the prompt
-    reads chronologically."""
+def _kind_contents(session, user_id, kind: str, search_vector: list[float], limit: int) -> list[str]:
+    """
+    Retrieves the most semantically relevant memories using pgvector cosine distance.
+    Closest matches (lowest distance) are returned first.
+    """
     rows = session.scalars(
         select(Memory.content)
         .where(Memory.user_id == user_id, Memory.kind == kind)
         .order_by(Memory.embedding.cosine_distance(search_vector))
         .limit(limit)
     ).all()
+    
     return list(rows)
 
 
-def get_memory(user_id: str) -> UserMemory:
+def get_memory(user_id: str, current_topic: str) -> UserMemory:
     """
-    Load one user's memory. Always returns a UserMemory.
-
-    An unknown user gets an empty object with interviews_done = 0, so
-    to_prompt_block() emits the first-interview message. Callers never
-    need to check for None.
+    Load one user's memory, pulling the most relevant past insights 
+    based on the semantic meaning of the new topic.
     """
     try:
-
+        # Generate the semantic search vector using the current topic
         search_vector = embedder.embed_query(current_topic)
+        
         with SessionLocal() as session:
             user = session.scalar(select(User).where(User.external_id == user_id))
 
@@ -52,18 +53,16 @@ def get_memory(user_id: str) -> UserMemory:
 
             return UserMemory(
                 user_id=user_id,
-                known_views=_kind_contents(session, user.id, "view", RECALL_LIMIT),
-                known_experiences=_kind_contents(session, user.id, "experience", RECALL_LIMIT),
-                past_topics=_kind_contents(session, user.id, "topic", 50),
+                known_views=_kind_contents(session, user.id, "view", search_vector, RECALL_LIMIT),
+                known_experiences=_kind_contents(session, user.id, "experience", search_vector, RECALL_LIMIT),
+                past_topics=_kind_contents(session, user.id, "topic", search_vector, 50),
                 audience=user.audience or "",
                 interviews_done=user.interviews_done,
             )
 
     except SQLAlchemyError as exc:
         print(f"[memory_store] read failed, continuing without memory: {exc}")
-        logging.exception("Memory read failed continuing without memory: {exc}")
         return UserMemory(user_id=user_id)
-
 
 def save_memory(memory: UserMemory) -> None:
     """

@@ -9,7 +9,7 @@ from src.prompts.interview import INTERVIEW_QUESTIONS_PROMPT
 from src.schemas.perspective import InterviewQuestion, QuestionSet, Answer
 from src.utils.json_output import extract_json
 
-load_dotenv()
+load_dotenv(override=True)
 
 
 class InterviewerAgent:
@@ -73,7 +73,7 @@ class InterviewerAgent:
 
         return "\n\n".join(blocks)
 
-    def probe(self, topic: str, answers: list[Answer], thin: list[Answer], n: int = 2) -> QuestionSet:
+    def probe(self, topic: str, answers: list[Answer], thin: list[Answer],suggested_categories: str, n: int = 2) -> QuestionSet:
         """
         One follow-up round on the thinnest answers.
         """
@@ -85,6 +85,7 @@ class InterviewerAgent:
                 "topic": topic,
                 "all_answers": self._format_answers(answers, include_feedback=False),
                 "thin_answers": self._format_answers(thin, include_feedback=True),
+                "suggested_categories": suggested_categories,
                 "n": n,
             })
 
@@ -103,7 +104,7 @@ class InterviewerAgent:
             print(f"[InterviewerAgent] probe failed: {exc}")
             return QuestionSet()
 
-    def invoke(self, topic: str, memory_block: str = "(First interview with this person — nothing known yet)", n: int = 4) -> QuestionSet:
+    def invoke(self, topic: str,tone: str, suggested_categories: str, memory_block: str = "(First interview with this person — nothing known yet)", n: int = 4) -> QuestionSet:
         """
         Returns a QuestionSet. Never raises.
         """
@@ -111,7 +112,9 @@ class InterviewerAgent:
             try:
                 raw = self.chain.invoke({
                     "topic": topic,
+                    "tone": tone,
                     "memory_block": memory_block,
+                    "suggested_categories": suggested_categories,
                     "n": n,
                 })
                 question_set = QuestionSet.model_validate(extract_json(raw))
@@ -135,24 +138,28 @@ class InterviewerAgent:
         questions = [
             InterviewQuestion(
                 id="q1",
+                category="THE_TRENCHES", 
                 text=f"What is the most recent thing you personally did, built or watched fail involving {topic}?",
                 why="First-hand detail is what makes the post yours.",
                 placeholder="We removed our orchestration layer after it added 40s per run.",
             ),
             InterviewQuestion(
                 id="q2",
+                category="HOT_TAKE", 
                 text=f"What do most people in your field believe about {topic} that you think is wrong?",
                 why="Disagreement is what stops people scrolling.",
                 placeholder="Everyone thinks more agents means more capability. It mostly means more failure modes.",
             ),
             InterviewQuestion(
                 id="q3",
+                category="MISSING_METRIC", 
                 text="Which tools, numbers or timeframes would you point at to back that up?",
                 why="Specifics separate credible from forgettable.",
                 placeholder="Three months, two frameworks, most incidents traced to retries.",
             ),
             InterviewQuestion(
                 id="q4",
+                category="BIG_PICTURE", 
                 text="Who do you want reading this, and what should they do differently afterwards?",
                 why="Gives the post someone to talk to and a way to end.",
                 placeholder="Engineering leads about to adopt a framework. Prototype without one first.",

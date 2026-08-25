@@ -1,6 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Literal
-
+from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -50,6 +49,12 @@ class ImprovementOpportunity(BaseModel):
     reason: str = Field(..., description="Explanation of what to improve and why it matters")
     recommendation: str = Field(..., description="High-level recommendation without rewriting the text")
 
+class HookEvaluation(BaseModel):
+    is_faithful: bool = Field(
+        description="True ONLY if the hook is 100% supported by the brief. False if it invents any metric, fact, or claim."
+    )
+    reason: str = Field(description="Brief explanation of why it is faithful or unfaithful.")
+
 class EvaluationResult(BaseModel):
     scores: Scores = Field(..., description="Multi-dimensional scoring of the LinkedIn post.")
 
@@ -67,7 +72,7 @@ class EvaluationResult(BaseModel):
 
     improvement_opportunities: List[ImprovementOpportunity] = Field(
         default_factory=list,
-        min_length=2,
+        min_length=0,
         description="Actionable improvements. Empty if no meaningful improvement remains.",
     )
 
@@ -82,5 +87,10 @@ class EvaluationResult(BaseModel):
         "Verbatim snippets from the post that are not supported by the brief. "
         "Empty list if everything traces back to the brief."
     ),
+    )
+
+    hook_evaluations: Optional[List[HookEvaluation]] = Field(
+        default=None, 
+        description="Evaluate each provided alternative hook in the exact order they were given."
     )
 

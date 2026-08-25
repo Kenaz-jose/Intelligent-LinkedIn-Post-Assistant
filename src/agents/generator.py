@@ -6,7 +6,7 @@ from langchain_core.output_parsers import StrOutputParser
 
 from src.prompts.generator import GENERATOR_PROMPT
 
-load_dotenv()
+load_dotenv(override=True)
 
 class GeneratorAgent:
     def __init__(
@@ -28,9 +28,10 @@ class GeneratorAgent:
         # Attach the StrOutputParser directly to the chain
         self.chain = self.prompt | self.llm | StrOutputParser()
 
-    def invoke(self, brief: str) -> str:
+    def invoke(self, payload: dict) -> str:
         response = self.chain.invoke({
-            "brief": brief
+            "brief": payload["brief"],
+            "tone": payload["tone"]
         })
         
         return response.strip()

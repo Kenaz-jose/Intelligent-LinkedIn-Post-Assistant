@@ -39,9 +39,10 @@ class InterviewQuestion(BaseModel):
     """
 
     id: str
-    text: str
-    why: str = ""  
-    placeholder: str = ""     
+    category: str = Field(description="The cognitive angle of this question (e.g., THE_TRENCHES, MISSING_METRIC, or a custom invented angle).")
+    text: str = Field(description="The actual question text.")
+    why: str = Field(description="One short line telling the user why this makes their post better.")
+    placeholder: str = Field(description="A short example of the expected answer.")     
 
 class QuestionSet(BaseModel):
     """
@@ -194,6 +195,7 @@ class PerspectiveBrief(BaseModel):
     details: list[str] = Field(default_factory=list)
     audience: str = ""
     takeaway: str = ""
+    tone: str = Field(default="Direct, punchy, and technical (like a senior engineer)")
     
 
     def to_prompt_block(self) -> str:

@@ -15,6 +15,7 @@ USER_ID = "demo-user"
 
 # Faithfulness is deliberately absent. It is a gate, not a craft dimension,
 # so charting it alongside the others would misrepresent how it is used.
+
 CRAFT_FIELDS = [
     "hook", "clarity", "engagement", "authenticity",
     "professionalism", "structure",
@@ -24,7 +25,7 @@ st.set_page_config(page_title="LinkedInForge", page_icon="🚀", layout="wide")
 
 
 def reset():
-    for key in ("phase", "topic", "questions", "answers", "probe_questions",
+    for key in ("phase", "topic", "tone", "questions", "answers", "probe_questions",
                 "brief", "brief_id", "result"):
         st.session_state.pop(key, None)
     for key in [k for k in st.session_state if k.startswith("ans_")]:
@@ -124,6 +125,7 @@ def initial_state(topic: str, brief) -> dict:
         "topic": topic,
         "brief": brief.model_dump(),
         "post": "",
+        "tone": st.session_state.get("tone", "Direct, punchy, and technical (like a senior engineer)"),
 
         "evaluation": None,
         "reflection": None,
@@ -135,7 +137,10 @@ def initial_state(topic: str, brief) -> dict:
 
         "current_craft": 0.0,
         "previous_craft": -1.0,
-
+         
+        "alternative_hooks": [],
+        "best_alternative_hooks": [],
+        
         "best_post": "",
         "best_verdict": None,
         "best_evaluation": None,
@@ -148,7 +153,7 @@ def build_brief(answers: list[Answer], was_probed: bool = False) -> None:
     three paths into the brief phase - unprobed, probed, and skipped."""
     with st.spinner("Understanding your angle..."):
         st.session_state.brief = finish_interview(
-            USER_ID, st.session_state.topic, answers
+            USER_ID, st.session_state.topic, answers, st.session_state.tone
         )
 
     st.session_state.brief_id = save_brief(
@@ -173,15 +178,29 @@ if st.session_state.phase == "topic":
         help="Just the subject. You'll be asked for the details next.",
     )
 
+    selected_tone = st.selectbox(
+    "Select Post Tone & Vibe:",
+    [
+        "Direct, punchy, and technical (like a senior engineer)",
+        "Conversational, casual, and highly relatable (story-driven)",
+        "Sharp, contrarian, and bold (challenging conventional wisdom)",
+        "Witty, sarcastic, and funny (uses dry humor and developer self-deprecation without losing technical accuracy)",
+        "Academic, measured, and deeply analytical"
+    ]
+    )
+
     if st.button("Start interview", type="primary", use_container_width=True):
         if not topic.strip():
             st.warning("Please enter a topic.")
             st.stop()
+        
+        # Save both topic and tone to session state
+        st.session_state.topic = topic.strip()
+        st.session_state.tone = selected_tone
 
         with st.spinner("Working out what to ask you..."):
-            st.session_state.questions = start_interview(USER_ID, topic.strip())
+            st.session_state.questions = start_interview(USER_ID, topic.strip(), selected_tone)
 
-        st.session_state.topic = topic.strip()
         st.session_state.phase = "answers"
         st.rerun()
 
@@ -215,7 +234,7 @@ elif st.session_state.phase == "answers":
             
             with st.spinner("Analyzing answers for follow-ups..."):
                 st.session_state.probe_questions = probe_interview(
-                    USER_ID, st.session_state.topic, answers
+                    USER_ID, st.session_state.topic, answers, st.session_state.tone
                 )
 
             if st.session_state.probe_questions.questions:
@@ -374,9 +393,62 @@ else:
         ["📝 Final Post", "🎯 Your Brief", "📊 Evaluation", "📈 Scores"]
     )
 
+    # with tab1:
+    #     st.text_area("Final post", value=result["post"], height=400,
+    #                  label_visibility="collapsed")
+
     with tab1:
-        st.text_area("Final post", value=result["post"], height=400,
-                     label_visibility="collapsed")
+            st.subheader("📝 Final Post")
+            
+            # 1. Grab the winning draft
+            winning_post = result.get("best_post", result.get("post", ""))
+            
+            # 2. Split the post into Hook (first paragraph) and Body (the rest)
+            # Using double newline as the paragraph separator
+            paragraphs = winning_post.split("\n\n")
+            original_hook = paragraphs[0] if paragraphs else ""
+            post_body = "\n\n".join(paragraphs[1:]) if len(paragraphs) > 1 else ""
+
+            # 3. Retrieve the safe, filtered alternative hooks
+            # (Checking 'best_alternative_hooks' from the evaluation node)
+            alt_hooks = result.get("best_alternative_hooks", result.get("alternative_hooks", []))
+
+            # 4. Create a dictionary to map radio labels to the actual hook text
+            hook_options = {
+                "Original (Keep as generated)": original_hook
+            }
+            
+            # Add the alternative hooks to the options
+            for h in alt_hooks:
+                # Create a clean label (truncate if the text is too long for the radio button)
+                snippet = h['text'][:60] + "..." if len(h['text']) > 60 else h['text']
+                label = f"{h['angle']}: {snippet}"
+                hook_options[label] = h['text']
+
+            # 5. Render the UI selection if alternative hooks exist
+            if alt_hooks:
+                st.markdown("**Want a different opening? Swap the hook:**")
+                selected_label = st.radio(
+                    "Alternative Hooks", 
+                    options=list(hook_options.keys()), 
+                    label_visibility="collapsed"
+                )
+                selected_hook_text = hook_options[selected_label]
+                st.divider()
+            else:
+                selected_hook_text = original_hook
+                st.caption("No alternative hooks passed the faithfulness check.")
+
+            # 6. Reconstruct the final post dynamically
+            final_display_text = f"{selected_hook_text}\n\n{post_body}" if post_body else selected_hook_text
+
+            # 7. Render the final text area
+            st.text_area(
+                "Final post", 
+                value=final_display_text, 
+                height=400,
+                label_visibility="collapsed"
+            )
 
     with tab2:
         st.caption("The angle the post was written from.")

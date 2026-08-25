@@ -15,6 +15,15 @@ THE ANSWERS THAT NEED FOLLOW-UP
 {thin_answers}
 (Note: The 'System Feedback' provided for each answer tells you exactly what concrete detail is missing).
 
+CATEGORY REQUIREMENT & QUESTION ANGLES
+To prevent repetitive questions, you must assign a distinct cognitive 'category' to every question.
+RULE: You must NEVER use the same category twice in a single generation.
+
+Here are strong SUGGESTED categories to extract specific missing details:
+{suggested_categories}
+
+If these do not fit the missing detail perfectly, you are free to INVENT a highly specific category name (e.g., "MISSING_DATA_CLEANING_STEP").
+
 HOW TO ASK
 - Quote their own words back, then ask for the concrete detail underneath.
   Good: "You said the migration was painful - what actually broke?"
@@ -54,6 +63,7 @@ Return ONLY valid JSON. Do not wrap it in markdown code blocks.
   "questions": [
     {{
       "id": "p1",
+      "category": "MISSING_METRIC",
       "text": "You mentioned the prediction pipeline worked well - what was your final F1-score?",
       "why": "Including exact model metrics makes your claim verifiable and credible.",
       "placeholder": "I achieved an F1-score of 0.86 using an ANN architecture."

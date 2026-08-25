@@ -8,7 +8,7 @@ from src.prompts.brief import BRIEF_PROMPT
 from src.schemas.perspective import Answer, PerspectiveBrief
 from src.utils.json_output import extract_json
 
-load_dotenv()
+load_dotenv(override=True)
 
 
 class BriefAgent:
@@ -67,6 +67,7 @@ class BriefAgent:
         topic: str,
         answers: list[Answer],
         memory_block: str = "(First interview with this person — nothing known yet)",
+        tone: str = "Direct, punchy, and technical (like a senior engineer)",
     ) -> PerspectiveBrief:
         """
         Returns a validated PerspectiveBrief.
@@ -95,7 +96,7 @@ class BriefAgent:
                 # The model sometimes rewrites or drops the topic.
                 # It came from the user, so it is not the model's to change.
                 brief.topic = topic
-
+                brief.tone = tone
                 return brief
 
             except Exception as exc:
