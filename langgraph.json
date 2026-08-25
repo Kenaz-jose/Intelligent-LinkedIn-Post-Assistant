@@ -1,0 +1,7 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "linkedin_agent": "./src/agents/workflow.py:app"
+  },
+  "env": ".env"
+}
