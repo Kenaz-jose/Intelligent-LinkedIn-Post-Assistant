@@ -16,7 +16,7 @@ class LinkedInState(TypedDict):
     brief: dict
     post: str
     tone: str
-    alternative_tone: List[Dict[str, str]]
+    alternative_hooks: List[Dict[str, str]]
 
     evaluation: Optional[object]
     reflection: Optional[object]
