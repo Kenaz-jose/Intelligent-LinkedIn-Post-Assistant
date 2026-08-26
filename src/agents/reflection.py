@@ -26,7 +26,7 @@ class ReflectionAgent:
     modes are kept as separate prompts rather than one prompt with a flag.
     """
 
-    def __init__(self, model_name: str = "meta/llama-3.1-70b-instruct", temperature: float = 0.2, repair_temperature: float = 0.0):
+    def __init__(self, model_name: str = "meta/llama-3.2-11b-vision-instruct", temperature: float = 0.2, repair_temperature: float = 0.0):
         self.parser = PydanticOutputParser(pydantic_object=ReflectionResult)
 
         self.llm = ChatNVIDIA(

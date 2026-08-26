@@ -18,7 +18,7 @@ class EvaluatorAgent:
 
     def __init__(
         self,
-        model_name: str = "meta/llama-3.1-70b-instruct",
+        model_name: str = "meta/llama-3.2-11b-vision-instruct",
         temperature: float = 0.1,
     ):
         self.llm = ChatNVIDIA(

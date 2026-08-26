@@ -11,7 +11,7 @@ class AnswerQualityAgent:
 
     def __init__(
         self,
-        model_name: str = "meta/llama-3.1-8b-instruct",
+        model_name: str = "meta/llama-3.2-11b-vision-instruct",
         temperature: float = 0.0,
     ):
         self.parser = PydanticOutputParser(pydantic_object=AnswerAssessment)

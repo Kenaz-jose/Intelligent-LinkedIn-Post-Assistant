@@ -11,12 +11,22 @@ from src.agents.refiner import RefinerAgent
 from src.schemas.perspective import PerspectiveBrief
 from src.evaluation.policy import Decision,Verdict,judge,decide,is_better,MAX_ITERATIONS
 
+from tavily import TavilyClient
+import os
+tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
+
+class ReferenceItem(TypedDict):
+    title: str
+    url: str
+    snippet: str
+    
 class LinkedInState(TypedDict):
     topic: str
     brief: dict
     post: str
     tone: str
     alternative_hooks: List[Dict[str, str]]
+    external_references: List[ReferenceItem]
 
     evaluation: Optional[object]
     reflection: Optional[object]

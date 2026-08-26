@@ -16,3 +16,4 @@ sqlalchemy>=2.0.30
 psycopg[binary]>=3.2.1 
 alembic>=1.13.0        
 pgvector
+tavily-python

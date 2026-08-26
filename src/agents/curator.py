@@ -8,7 +8,7 @@ from src.schemas.curator import CuratedOptions
 from src.prompts.curator import curator_prompt, parser
 
 search_tool = TavilySearchResults(max_results=3)
-llm = ChatNVIDIA(model="meta/llama-3.1-70b-instruct", temperature=0.2)
+llm = ChatNVIDIA(model="meta/llama-3.2-11b-vision-instruct", temperature=0.2)
 
 # Build the explicit chain
 chain = curator_prompt | llm | parser

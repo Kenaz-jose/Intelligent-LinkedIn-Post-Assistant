@@ -11,6 +11,7 @@ from src.services.perspective_service import (
     finish_interview,
 )
 from src.store.run_store import save_brief, save_run
+from src.services.search_service import fetch_live_context
 
 USER_ID = "demo-user"
 
@@ -114,7 +115,7 @@ def scores_frame(evaluation) -> pd.DataFrame:
     ])
 
 
-def initial_state(topic: str, brief) -> dict:
+def initial_state(topic: str, brief, external_references: list = None) -> dict:
     """
     Seed every channel in LinkedInState.
 
@@ -125,6 +126,7 @@ def initial_state(topic: str, brief) -> dict:
     return {
         "topic": topic,
         "brief": brief.model_dump(),
+        "external_references": external_references,
         "post": "",
         "tone": st.session_state.get("tone", "Direct, punchy, and technical (like a senior engineer)"),
 
@@ -365,6 +367,50 @@ elif st.session_state.phase == "brief":
 
     st.divider()
 
+    # --- NEW: HUMAN-IN-THE-LOOP WEB SEARCH ---
+    st.markdown("### 🌐 Add Live Context (Optional)")
+    st.caption("Ground your post with real-time industry data, news, or benchmarks.")
+    
+    # Initialize search cache to prevent re-fetching on every checkbox click
+    if "raw_search_results" not in st.session_state:
+        st.session_state.raw_search_results = None
+        st.session_state.selected_references = []
+        
+    fetch_context = st.checkbox("Search the web for current data supporting your thesis")
+    
+    if fetch_context:
+        if st.session_state.raw_search_results is None:
+            with st.spinner("Fetching live context..."):
+                # Use the brief's thesis to guide the Tavily search
+                st.session_state.raw_search_results = fetch_live_context(
+                    topic=st.session_state.topic, 
+                    thesis=brief.thesis or ""
+                )
+        
+        if st.session_state.raw_search_results:
+            st.write("**Select the facts you want to explicitly include in your draft:**")
+            
+            # Reset selections before rebuilding
+            current_selections = []
+            
+            for idx, result in enumerate(st.session_state.raw_search_results):
+                with st.container(border=True):
+                    # Checkbox for each article
+                    if st.checkbox(f"**{result['title']}**", key=f"ref_{idx}"):
+                        current_selections.append(result)
+                    st.caption(f"{result['snippet']}")
+                    st.markdown(f"[Source Link]({result['url']})")
+                    
+            st.session_state.selected_references = current_selections
+        else:
+            st.warning("No relevant live data found right now.")
+    else:
+        st.session_state.selected_references = []
+        st.session_state.raw_search_results = None
+
+    st.divider()
+    # -----------------------------------------
+
     col1, col2 = st.columns([1, 2])
 
     with col1:
@@ -376,8 +422,13 @@ elif st.session_state.phase == "brief":
         if st.button("Write the post", type="primary", use_container_width=True):
             try:
                 with st.spinner("Generating and refining (this takes a minute)..."):
+                    # PASS THE SELECTED REFERENCES TO THE GRAPH
                     st.session_state.result = workflow_app.invoke(
-                        initial_state(st.session_state.topic, brief)
+                        initial_state(
+                            st.session_state.topic, 
+                            brief, 
+                            st.session_state.selected_references
+                        )
                     )
             except Exception as e:
                 st.error(
@@ -390,7 +441,6 @@ elif st.session_state.phase == "brief":
 
             st.session_state.phase = "result"
             st.rerun()
-
 
 # ---------------------------------------------------------------- RESULT
 elif st.session_state.phase == "result":

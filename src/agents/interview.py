@@ -24,7 +24,7 @@ class InterviewerAgent:
     same four safe questions for every topic.
     """
 
-    def __init__(self, model_name: str = "meta/llama-3.1-70b-instruct", temperature: float = 0.8):
+    def __init__(self, model_name: str = "meta/llama-3.2-11b-vision-instruct", temperature: float = 0.8):
         self.llm = ChatNVIDIA(
             model=model_name,
             temperature=temperature,
