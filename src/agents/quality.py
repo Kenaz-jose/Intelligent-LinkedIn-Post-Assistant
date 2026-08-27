@@ -2,24 +2,26 @@ import os
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import PydanticOutputParser
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 from src.schemas.quality import AnswerAssessment
 from src.prompts.quality import QUALITY_PROMPT
+#from src.config.settings import NVIDIA_MODEL, NVIDIA_API_KEY
 
 class AnswerQualityAgent:
     """Evaluates whether an interview response contains concrete details."""
 
     def __init__(
         self,
-        model_name: str = "meta/llama-3.2-11b-vision-instruct",
+        model_name: str = "gemini-3.6-flash",
         temperature: float = 0.0,
     ):
         self.parser = PydanticOutputParser(pydantic_object=AnswerAssessment)
         
-        self.llm = ChatNVIDIA(
+        self.llm = ChatGoogleGenerativeAI(
             model=model_name,
             temperature=temperature,
-            api_key=os.getenv("NVIDIA_API_KEY"),
+            api_key=os.getenv("GEMINI_API_KEY"),
             max_retries=1,
             timeout=30,
         )

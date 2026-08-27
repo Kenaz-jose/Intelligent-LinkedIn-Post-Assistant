@@ -10,7 +10,8 @@ from langchain_core.output_parsers import PydanticOutputParser
 from src.schemas.reflection import ReflectionResult
 from src.schemas.evaluator import EvaluationResult
 from src.prompts.reflection import REFLECTION_PROMPT
-from src.prompts.repair import REPAIR_PROMPT
+from src.prompts.faithfullness import FAITHFULLNESS_PROMPT
+from src.config.settings import NVIDIA_MODEL, NVIDIA_API_KEY
 
 load_dotenv(override=True)
 
@@ -26,13 +27,13 @@ class ReflectionAgent:
     modes are kept as separate prompts rather than one prompt with a flag.
     """
 
-    def __init__(self, model_name: str = "meta/llama-3.2-11b-vision-instruct", temperature: float = 0.2, repair_temperature: float = 0.0):
+    def __init__(self, model_name: str = NVIDIA_MODEL, temperature: float = 0.2, repair_temperature: float = 0.0):
         self.parser = PydanticOutputParser(pydantic_object=ReflectionResult)
 
         self.llm = ChatNVIDIA(
             model=model_name,
             temperature=temperature,
-            api_key=os.getenv("NVIDIA_API_KEY"),
+            api_key=NVIDIA_API_KEY,
             max_retries=1,
             timeout=60,
         )
@@ -42,7 +43,7 @@ class ReflectionAgent:
         self.repair_llm = ChatNVIDIA(
             model=model_name,
             temperature=repair_temperature,
-            api_key=os.getenv("NVIDIA_API_KEY"),
+            api_key=NVIDIA_API_KEY,
             max_retries=1,
             timeout=30,
         )

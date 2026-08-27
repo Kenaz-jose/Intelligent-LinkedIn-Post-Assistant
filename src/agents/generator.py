@@ -4,8 +4,10 @@ from dotenv import load_dotenv
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 from src.prompts.generator import GENERATOR_PROMPT
+#from src.config.settings import GEMINI_MODEL, GEMINI_API_KEY
 
 load_dotenv(override=True)
 
@@ -26,14 +28,14 @@ def format_external_references(references: List[Dict[str, str]]) -> str:
 class GeneratorAgent:
     def __init__(
         self,
-        model_name: str = "meta/llama-3.2-11b-vision-instruct",
+        model_name: str = "gemini-3.6-flash",
         temperature: float = 0.7,
     ):
-        # Use ChatNVIDIA with strict timeout and retries
-        self.llm = ChatNVIDIA(
+        # Use ChatGoogleGenerativeAI with strict timeout and retries
+        self.llm = ChatGoogleGenerativeAI(
             model=model_name,
             temperature=temperature,
-            api_key=os.getenv("NVIDIA_API_KEY"),
+            api_key=os.getenv("GEMINI_API_KEY"),
             max_retries=1,
             timeout=60
         )

@@ -1,25 +1,31 @@
+import os
 from typing import TypedDict, Optional, List, Dict
 
 from langgraph.graph import StateGraph, END, START
+from langgraph.checkpoint.memory import MemorySaver
+from dotenv import load_dotenv
+from tavily import TavilyClient
 
 from src.utils.logger import logger
+from src.schemas.perspective import PerspectiveBrief
+from src.evaluation.policy import Decision, Verdict, judge, decide, is_better, MAX_ITERATIONS
+
 from src.agents.hook import HookAgent
 from src.agents.generator import GeneratorAgent
 from src.agents.evaluator import EvaluatorAgent
-from src.agents.reflection import ReflectionAgent
-from src.agents.refiner import RefinerAgent
-from src.schemas.perspective import PerspectiveBrief
-from src.evaluation.policy import Decision,Verdict,judge,decide,is_better,MAX_ITERATIONS
+from src.agents.router import RouterAgent
+from src.agents.fact_checker import FactCheckerAgent
+from src.agents.hook_copywriter import HookCopywriterAgent
+from src.agents.stylist import StylistAgent
 
-from tavily import TavilyClient
-import os
+load_dotenv(override=True)
 tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
 class ReferenceItem(TypedDict):
     title: str
     url: str
     snippet: str
-    
+
 class LinkedInState(TypedDict):
     topic: str
     brief: dict
@@ -29,10 +35,9 @@ class LinkedInState(TypedDict):
     external_references: List[ReferenceItem]
 
     evaluation: Optional[object]
-    reflection: Optional[object]
-
     verdict: Optional[object]
     decision: Optional[object]
+    router_reasoning: Optional[str]
 
     iteration: int
     repairs_used: int
@@ -46,25 +51,20 @@ class LinkedInState(TypedDict):
     best_evaluation: Optional[object]
     best_iteration: int
 
+# Initialize Agents
 hook_agent = HookAgent()
 generator_agent = GeneratorAgent()
 evaluator_agent = EvaluatorAgent()
-reflection_agent = ReflectionAgent()
-refiner_agent = RefinerAgent()
+router_agent = RouterAgent()
+fact_checker_agent = FactCheckerAgent()
+hook_copywriter_agent = HookCopywriterAgent()
+stylist_agent = StylistAgent()
 
 def brief_block(state: LinkedInState) -> str:
-    """
-    The author's brief as prompt text.
-
-    Every agent that used to receive state["topic"] now receives this.
-    One function means generator, evaluator, reflection and refiner all
-    see identical source material - which is what makes the faithfulness
-    score meaningful.
-    """
+    """The author's brief as prompt text."""
     return PerspectiveBrief.model_validate(state["brief"]).to_prompt_block()
 
 def generate_hooks_node(state: LinkedInState) -> dict:
-    """Parallel node that generates hooks."""
     hooks = hook_agent.generate_hooks(
         topic=state["topic"],
         brief=state["brief"],
@@ -73,7 +73,6 @@ def generate_hooks_node(state: LinkedInState) -> dict:
     return {"alternative_hooks": hooks}
 
 def generate_node(state: LinkedInState):
-
     brief = brief_block(state)
     tone = state.get("tone", "Direct, punchy, and technical (like a senior engineer)")
 
@@ -84,9 +83,7 @@ def generate_node(state: LinkedInState):
 
     print("\n===== GENERATED POST =====")
     print(post)
-
     logger.info("Generated initial post")
-    logger.info(post)
 
     return {
         "post": post,
@@ -94,128 +91,40 @@ def generate_node(state: LinkedInState):
         "repairs_used": 0,
         "current_craft": 0.0,
         "previous_craft": -1.0,
-        "best_post": "",
+        "best_post": post,
         "best_verdict": None,
         "best_evaluation": None,
         "best_iteration": 0,
     }
 
-def display_evaluation(evaluation, verdict: Verdict, decision: Decision):
-    scores = evaluation.scores
-
-    print("\n" + "=" * 60)
-    print("EVALUATION REPORT")
-    print("=" * 60)
-
-    print("\nSCORES")
-    print("-" * 60)
-
-    for dim in (
-        "hook",
-        "clarity",
-        "engagement",
-        "authenticity",
-        "professionalism",
-        "structure",
-    ):
-        d = getattr(scores, dim)
-        print(f"{dim.title():<16}: {d.score}/10")
-        print(f"{'':<16}  {d.observation}")
-
-    print(f"{'Faithfulness':<16}: {verdict.faithfulness}/10")
-    print(f"{'':<16}  {scores.faithfulness.observation}")
-
-    print("\nCRAFT SCORE")
-    print("-" * 60)
-    print(f"Weighted craft  : {verdict.craft_score}/10")
-
-    print("\nFAITHFULNESS GATE")
-    print("-" * 60)
-    print(f"Faithfulness    : {verdict.faithfulness}/10")
-    print(f"Gate            : {'PASS' if verdict.passes_faithfulness else 'FAIL'}")
-
-    claims = getattr(evaluation, "unsupported_claims", [])
-    if claims:
-        print("\nUNSUPPORTED CLAIMS")
-        print("-" * 60)
-        for claim in claims:
-            print(f"  - {claim}")
-
-    if evaluation.improvement_opportunities:
-        print("\nIMPROVEMENT OPPORTUNITIES")
-        print("-" * 60)
-        for i, item in enumerate(evaluation.improvement_opportunities, 1):
-            print(f"\n{i}. [{item.priority} Priority] - {item.category}")
-            print(f"   Why  : {item.reason}")
-            print(f"   Fix  : {item.recommendation}")
-
-    print("\nSTRENGTHS")
-    print("-" * 60)
-    for s in evaluation.strengths:
-        print(f"  + {s}")
-
-    if evaluation.weaknesses:
-        print("\nWEAKNESSES")
-        print("-" * 60)
-        for w in evaluation.weaknesses:
-            print(f"  - {w}")
-
-    print("\nFEEDBACK")
-    print("-" * 60)
-    print(evaluation.feedback)
-
-    print("\nPOLICY DECISION")
-    print("-" * 60)
-    print(f"{decision.outcome.upper()}: {decision.reason}")
-
-    print("=" * 60)
-
-
 def evaluate_node(state: LinkedInState):
-    """
-    Evaluator observes, policy decides, best draft is recorded.
-    Now includes parallel hook filtering to ensure no hallucinated hooks reach the UI.
-    """
-    # 1. Format the alternative hooks for the evaluator prompt
     alt_hooks = state.get("alternative_hooks", [])
     alt_hooks_text = "\n".join(
         [f"Hook {i+1} ({h['angle']}): {h['text']}" for i, h in enumerate(alt_hooks)]
     ) if alt_hooks else "None provided."
 
     try:
-        # 2. Pass the hooks into your evaluator agent
         evaluation = evaluator_agent.invoke(
-            post=state["post"], 
+            post=state["post"],
             brief=brief_block(state),
-            alternative_hooks=alt_hooks_text  
+            alternative_hooks=alt_hooks_text
         )
     except Exception as exc:
         logger.error(f"Evaluation failed: {exc}")
-        print(f"\nEVALUATION FAILED: {exc}")
         return {
-            "decision": Decision(
-                outcome="ready",
-                reason=f"Evaluation failed ({type(exc).__name__}). Returning best draft so far.",
-            )
+            "decision": Decision(outcome="ready", reason=f"Evaluation failed. Returning best draft so far.")
         }
 
-    # 3. FILTER OUT UNFAITHFUL HOOKS
+    # Filter unfaithful alternative hooks
     valid_hooks = []
     if alt_hooks and getattr(evaluation, "hook_evaluations", None):
-        # Match each hook to its evaluation score using zip
         for hook, eval_result in zip(alt_hooks, evaluation.hook_evaluations):
             if eval_result.is_faithful:
                 valid_hooks.append(hook)
-            else:
-                msg = f"\n[FILTER] Dropped unfaithful hook: '{hook['text']}'\nReason: {eval_result.reason}"
-                logger.info(msg)
-                print(msg)
     else:
-        # If no evaluations returned for them, keep them
         valid_hooks = alt_hooks
 
     verdict = judge(evaluation)
-
     decision = decide(
         verdict=verdict,
         iteration=state.get("iteration", 0),
@@ -223,21 +132,12 @@ def evaluate_node(state: LinkedInState):
         previous_craft=state.get("previous_craft", -1.0),
     )
 
-    display_evaluation(evaluation, verdict, decision)
-
-    logger.info(
-        f"Evaluation | Craft={verdict.craft_score} "
-        f"Faithfulness={verdict.faithfulness} "
-        f"Gate={'PASS' if verdict.passes_faithfulness else 'FAIL'} "
-        f"Decision={decision.outcome}"
-    )
-
     update = {
         "evaluation": evaluation,
         "verdict": verdict,
         "decision": decision,
         "current_craft": verdict.craft_score,
-        "alternative_hooks": valid_hooks,  
+        "alternative_hooks": valid_hooks,
     }
 
     if decision.repair_mode:
@@ -246,280 +146,118 @@ def evaluate_node(state: LinkedInState):
     incumbent = state.get("best_verdict")
 
     if is_better(verdict, incumbent):
-        previous = incumbent.craft_score if incumbent else None
-        print(f"\nNEW BEST DRAFT - craft {verdict.craft_score} (previous: {previous})")
-
-        update["best_post"] = state["post"]
-        update["best_verdict"] = verdict
-        update["best_evaluation"] = evaluation
-        update["best_iteration"] = state.get("iteration", 0)
-        update["best_alternative_hooks"] = valid_hooks  
+        print(f"\nNEW BEST DRAFT - craft {verdict.craft_score}")
+        update.update({
+            "best_post": state["post"],
+            "best_verdict": verdict,
+            "best_evaluation": evaluation,
+            "best_iteration": state.get("iteration", 0),
+            "best_alternative_hooks": valid_hooks
+        })
     else:
-        print(
-            f"\nDraft not an improvement - keeping iteration "
-            f"{state.get('best_iteration', 0)} (craft {incumbent.craft_score})"
-        )
+        print(f"\nDraft not an improvement - keeping iteration {state.get('best_iteration', 0)}")
 
     return update
 
-def display_reflection(reflection, repair_mode: bool):
-    print("\n" + "=" * 60)
-    print("REPAIR PLAN" if repair_mode else "REFLECTION PLAN")
-    print("=" * 60)
+def _get_critique_string(evaluation) -> str:
+    critique_items = []
+    if evaluation:
+        if getattr(evaluation, "feedback", None):
+            critique_items.append(f"Feedback: {evaluation.feedback}")
+        if getattr(evaluation, "weaknesses", None):
+            critique_items.append(f"Weaknesses: {', '.join(evaluation.weaknesses)}")
+        if getattr(evaluation, "unsupported_claims", None):
+            critique_items.append(f"Unsupported Claims: {', '.join(evaluation.unsupported_claims)}")
+    return "\n".join(critique_items) if critique_items else "Draft needs improvement."
 
-    if reflection.priority_issues:
-        print("\nPRIORITY ISSUES")
-        print("-" * 60)
-        for i, issue in enumerate(reflection.priority_issues, 1):
-            print(f"{i}. {issue}")
+def fix_facts_node(state: LinkedInState):
+    print("\n[REPAIR] Routing to FactCheckerAgent...")
+    critique = _get_critique_string(state.get("evaluation"))
+    repaired_post = fact_checker_agent.invoke(state["post"], brief_block(state), critique)
+    return {"post": repaired_post, "iteration": state["iteration"] + 1, "previous_craft": state["current_craft"]}
 
-    if reflection.strengths_to_preserve:
-        print("\nSTRENGTHS TO PRESERVE")
-        print("-" * 60)
-        for s in reflection.strengths_to_preserve:
-            print(f"  + {s}")
+def fix_hook_node(state: LinkedInState):
+    print("\n[REPAIR] Routing to HookCopywriterAgent...")
+    critique = _get_critique_string(state.get("evaluation"))
+    repaired_post = hook_copywriter_agent.invoke(state["post"], critique)
+    return {"post": repaired_post, "iteration": state["iteration"] + 1, "previous_craft": state["current_craft"]}
 
-    print("\nOPERATIONS")
-    print("-" * 60)
-    if not reflection.operations:
-        print("No operations required.")
-    else:
-        for i, op in enumerate(reflection.operations, 1):
-            print(f"\n{i}. {op.op}")
-            print(f"   Target Snippet : \"{op.target_snippet}\"")
-            print(f"   Instruction    : {op.instruction}")
+def fix_flow_node(state: LinkedInState):
+    print("\n[REPAIR] Routing to StylistAgent...")
+    critique = _get_critique_string(state.get("evaluation"))
+    repaired_post = stylist_agent.invoke(state["post"], critique)
+    return {"post": repaired_post, "iteration": state["iteration"] + 1, "previous_craft": state["current_craft"]}
 
-    print("=" * 60)
+def dynamic_switchboard(state: LinkedInState) -> str:
+    iteration = state.get("iteration", 0)
+    decision = state.get("decision")
+    verdict = state.get("verdict")
+    evaluation = state.get("evaluation")
 
+    # 1. Hard Limits
+    if iteration >= MAX_ITERATIONS:
+        print(f"\n[SWITCHBOARD] Max iterations hit ({MAX_ITERATIONS}). Forcing stop.")
+        return "finalize"
 
-def reflect_node(state: LinkedInState):
-    repair_mode = state["decision"].repair_mode
+    if decision and decision.outcome == "ready":
+        print("\n[SWITCHBOARD] Policy engine approved draft. Stopping.")
+        return "finalize"
 
-    try:
-        reflection = reflection_agent.invoke(
-            state["post"],
-            state["evaluation"],
-            brief_block(state),
-            repair_mode=repair_mode,
-        )
-    except Exception as exc:
-        # A parser failure must not destroy the run. Returning no operations
-        # routes to finalize, which still emits the best draft recorded so far.
-        logger.error(f"Reflection failed: {exc}")
-        print(f"\nREFLECTION FAILED: {exc} - stopping with best draft.")
-        return {
-            "reflection": None,
-            "decision": Decision(
-                outcome="ready",
-                reason=f"Reflection failed ({type(exc).__name__}). Returning best draft.",
-            ),
-        }
+    # 2. Agentic Routing
+    critique_str = _get_critique_string(evaluation)
+    craft = verdict.craft_score if verdict else 0.0
+    passes_faith = verdict.passes_faithfulness if verdict else False
 
-    display_reflection(reflection, repair_mode)
-
-    logger.info(
-        f"Reflection | Mode={'repair' if repair_mode else 'craft'} "
-        f"Operations={len(reflection.operations)}"
+    route_decision = router_agent.decide(
+        brief=brief_block(state),
+        post=state["post"],
+        critique=critique_str,
+        faithfulness_pass=passes_faith,
     )
 
-    for op in reflection.operations:
-        logger.info(f"Operation={op.op} TargetSnippet={op.target_snippet}")
-
-    update = {"reflection": reflection}
-
-    if not reflection.operations:
-        update["decision"] = Decision(
-            outcome="ready",
-            reason="Reflection found no edit worth making. Returning the current draft.",
-        )
-
-    return update
-
-def display_refiner(refined):
-    print("\n" + "=" * 60)
-    print("REFINED POST")
-    print("=" * 60)
-
-    print("\nFINAL POST\n")
-    print(refined.final_post)
-
-    print("\nCHANGES APPLIED")
-    print("-" * 60)
-    if not refined.changes_applied:
-        print("No changes were applied.")
-    else:
-        for i, change in enumerate(refined.changes_applied, 1):
-            print(f"\n{i}. {change.op} (Status: {change.status})")
-            print(f"   Target Snippet : \"{change.target_snippet}\"")
-            print(f"   Reason         : {change.reason}")
-
-    if refined.skipped_operations:
-        print("\nSKIPPED OPERATIONS")
-        print("-" * 60)
-        for i, change in enumerate(refined.skipped_operations, 1):
-            print(f"\n{i}. {change.op}")
-            print(f"   Target Snippet : \"{change.target_snippet}\"")
-            print(f"   Reason Skipped : {change.reason}")
-
-    print("\nFAITHFULNESS CHECK")
-    print("-" * 60)
-    print(f"Passed: {refined.faithfulness_check.passed}")
-
-    if refined.faithfulness_check.notes:
-        print(f"Notes: {refined.faithfulness_check.notes}")
-
-    print("=" * 60)
-
-
-def refine_node(state: LinkedInState):
-    try:
-        refined = refiner_agent.invoke(
-            state["post"],
-            state["reflection"],
-            brief_block(state),
-        )
-    except Exception as exc:
-        logger.error(f"Refinement failed: {exc}")
-        print(f"\nREFINEMENT FAILED: {exc} - keeping current draft.")
-        # Burn the iteration so the loop still terminates.
-        return {"iteration": state["iteration"] + 1}
-
-    display_refiner(refined)
-
-    logger.info(f"Refinement #{state['iteration'] + 1}")
-
-    return {
-        "post": refined.final_post,
-        "iteration": state["iteration"] + 1,
-        "previous_craft": state["current_craft"],
-    }
-
-
-def route_after_evaluation(state: LinkedInState) -> str:
-    """
-    Pure lookup. Every judgment was already made by the policy engine in
-    evaluate_node - this only translates an outcome into an edge, so there
-    is nowhere here for a second, conflicting decision to creep in.
-    """
-    decision = state["decision"]
-    iteration = state.get("iteration", 0)
-
-    print(f"\n[ROUTER] Iteration {iteration}/{MAX_ITERATIONS} -> {decision.outcome.upper()}")
-    print(f"   {decision.reason}")
-
-    if decision.outcome == "refine":
-        return "refine"
-
-    return "stop"
-
-
-def route_after_reflection(state: LinkedInState) -> str:
-    reflection = state.get("reflection")
-
-    if reflection is None or not reflection.operations:
-        print("\n[ROUTER] No operations produced -> finalize")
-        return "stop"
-
-    print(f"\n[ROUTER] {len(reflection.operations)} operation(s) -> refine")
-    return "refine"
+    print(f"\n[SWITCHBOARD] Decision: {route_decision.action.upper()} | Reason: {route_decision.reasoning}")
+    return route_decision.action
 
 def finalize_node(state: LinkedInState):
-    """
-    Swap the best draft back into `post` before the graph exits.
-
-    Refinement is allowed to explore and fail, because this node guarantees
-    the caller receives the highest-scoring version, not whichever version
-    happened to be last.
-    """
     best_post = state.get("best_post") or state["post"]
-    best_verdict = state.get("best_verdict")
-    best_iteration = state.get("best_iteration", 0)
-    total_iterations = state.get("iteration", 0)
-    decision = state.get("decision")
-
-    print("\n" + "=" * 60)
-    print("FINAL POST")
-    print("=" * 60)
-
-    if decision is not None:
-        if best_verdict is not None and best_iteration < total_iterations:
-            # The decision describes the LAST draft evaluated. When an earlier
-            # draft won, reporting that reason alone contradicts the verdict
-            # shown beside it.
-            print(f"\nStopped after iteration {total_iterations}: {decision.reason}")
-            print(f"Returning iteration {best_iteration}, which scored higher.")
-        else:
-            print(f"\nStopped because: {decision.reason}")
-
-    if best_verdict is not None:
-        print(
-            f"Best draft: iteration {best_iteration} of {total_iterations} "
-            f"(craft {best_verdict.craft_score}, faithfulness {best_verdict.faithfulness})"
-        )
-
-        if not best_verdict.passes_faithfulness:
-            print(
-                "\nWARNING: No draft passed the faithfulness gate. The post below "
-                "contains material not supported by the brief and should not be "
-                "published without review. This usually means the brief was too "
-                "thin to write from."
-            )
-
-        if best_iteration < total_iterations:
-            print("\nNote: refinement did not improve on this draft - returning the earlier version.")
-
-    print()
-    print(best_post)
-    print("=" * 60)
-
-    logger.info(
-        f"Final | BestIteration={best_iteration}/{total_iterations} "
-        f"Craft={best_verdict.craft_score if best_verdict else 'n/a'} "
-        f"FaithfulnessGate={'PASS' if best_verdict and best_verdict.passes_faithfulness else 'FAIL'}"
-    )
-
+    print("\n" + "=" * 60 + "\nFINAL POST\n" + "=" * 60 + f"\n{best_post}\n" + "=" * 60)
     return {
         "post": best_post,
         "evaluation": state.get("best_evaluation") or state.get("evaluation"),
-        "verdict": best_verdict,
+        "verdict": state.get("best_verdict") or state.get("verdict"),
     }
 
 graph = StateGraph(LinkedInState)
+memory = MemorySaver()
 
 graph.add_node("generate_hooks", generate_hooks_node)
 graph.add_node("generate", generate_node)
 graph.add_node("evaluate", evaluate_node)
-graph.add_node("reflect", reflect_node)
-graph.add_node("refine", refine_node)
 graph.add_node("finalize", finalize_node)
+
+graph.add_node("fix_facts", fix_facts_node)
+graph.add_node("fix_hook", fix_hook_node)
+graph.add_node("fix_flow", fix_flow_node)
 
 graph.add_edge(START, "generate")
 graph.add_edge(START, "generate_hooks")
-
-
 graph.add_edge("generate", "evaluate")
 graph.add_edge("generate_hooks", "evaluate")
 
-
 graph.add_conditional_edges(
     "evaluate",
-    route_after_evaluation,
+    dynamic_switchboard,
     {
-        "refine": "reflect",
-        "stop": "finalize",
+        "fix_facts": "fix_facts",
+        "fix_hook": "fix_hook",
+        "fix_flow": "fix_flow",
+        "finalize": "finalize",
     },
 )
 
-graph.add_conditional_edges(
-    "reflect",
-    route_after_reflection,
-    {
-        "refine": "refine",
-        "stop": "finalize",
-    },
-)
-
-graph.add_edge("refine", "evaluate")
+graph.add_edge("fix_facts", "evaluate")
+graph.add_edge("fix_hook", "evaluate")
+graph.add_edge("fix_flow", "evaluate")
 graph.add_edge("finalize", END)
 
-app = graph.compile()
+app = graph.compile(checkpointer=memory,interrupt_before=["finalize"])

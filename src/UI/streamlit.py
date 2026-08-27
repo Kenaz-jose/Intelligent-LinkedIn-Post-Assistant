@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import uuid
 
 from src.agents.curator import get_curated_topics
 from src.agents.workflow import app as workflow_app
@@ -15,9 +16,6 @@ from src.services.search_service import fetch_live_context
 
 USER_ID = "demo-user"
 
-# Faithfulness is deliberately absent. It is a gate, not a craft dimension,
-# so charting it alongside the others would misrepresent how it is used.
-
 CRAFT_FIELDS = [
     "hook", "clarity", "engagement", "authenticity",
     "professionalism", "structure",
@@ -25,29 +23,35 @@ CRAFT_FIELDS = [
 
 st.set_page_config(page_title="Spotlight", page_icon="💫", layout="wide")
 
+# ---------------------------------------------------------
+# SESSION STATE & LANGGRAPH CONFIG
+# ---------------------------------------------------------
+if "thread_id" not in st.session_state:
+    st.session_state.thread_id = str(uuid.uuid4())
+
+config = {"configurable": {"thread_id": st.session_state.thread_id}}
+
+st.session_state.setdefault("phase", "topic")
+
 
 def reset():
     for key in ("phase", "topic", "tone", "questions", "answers", "probe_questions",
-                "brief", "brief_id", "result"):
+                "brief", "brief_id", "result", "raw_search_results", "selected_references"):
         st.session_state.pop(key, None)
     for key in [k for k in st.session_state if k.startswith("ans_")]:
         st.session_state.pop(key, None)
+    # Generate a new thread ID for a fresh LangGraph memory state
+    st.session_state.thread_id = str(uuid.uuid4())
 
 
 def collect_answers(questions, is_probe: bool = False) -> list[Answer]:
-    """Render a question list and return the answers. Widget keys are the
-    question ids, so first-round (q1..qn) and probe (p1..pn) answers can
-    never overwrite each other."""
     answers = []
     for q in questions:
         st.markdown(f"**{q.text}**")
         
-        # --- SLM FEEDBACK UI INTEGRATION ---
         if is_probe:
-            # Highlight the AI's coaching tip derived from the SLM feedback
             st.info(f"💡 **Tip:** {q.why}")
         else:
-            # Standard subtle caption for initial questions
             st.caption(q.why)
             
         text = st.text_area(
@@ -62,14 +66,8 @@ def collect_answers(questions, is_probe: bool = False) -> list[Answer]:
         )
     return answers
 
-def render_brief(brief) -> None:
-    """
-    Human-readable view of the brief.
 
-    Deliberately separate from to_prompt_block(), which is the contract
-    with the agents and must stay stable. This one answers a single
-    question for the author: what angle is the post going to take?
-    """
+def render_brief(brief) -> None:
     st.markdown(f"#### {brief.thesis or '_No clear position captured_'}")
     st.caption("This is the position the post will argue.")
 
@@ -116,34 +114,22 @@ def scores_frame(evaluation) -> pd.DataFrame:
 
 
 def initial_state(topic: str, brief, external_references: list = None) -> dict:
-    """
-    Seed every channel in LinkedInState.
-
-    generate_node overwrites most of these on the first tick, but seeding
-    them explicitly means a mismatch between this file and the workflow
-    fails here rather than somewhere mid-run.
-    """
     return {
         "topic": topic,
         "brief": brief.model_dump(),
-        "external_references": external_references,
+        "external_references": external_references or [],
         "post": "",
         "tone": st.session_state.get("tone", "Direct, punchy, and technical (like a senior engineer)"),
-
         "evaluation": None,
         "reflection": None,
         "verdict": None,
         "decision": None,
-
         "iteration": 0,
         "repairs_used": 0,
-
         "current_craft": 0.0,
         "previous_craft": -1.0,
-         
         "alternative_hooks": [],
         "best_alternative_hooks": [],
-        
         "best_post": "",
         "best_verdict": None,
         "best_evaluation": None,
@@ -152,8 +138,6 @@ def initial_state(topic: str, brief, external_references: list = None) -> dict:
 
 
 def build_brief(answers: list[Answer], was_probed: bool = False) -> None:
-    """Synthesise the brief, record it, and move to review. Shared by the
-    three paths into the brief phase - unprobed, probed, and skipped."""
     with st.spinner("Understanding your angle..."):
         st.session_state.brief = finish_interview(
             USER_ID, st.session_state.topic, answers, st.session_state.tone
@@ -167,15 +151,16 @@ def build_brief(answers: list[Answer], was_probed: bool = False) -> None:
     st.rerun()
 
 
-st.session_state.setdefault("phase", "topic")
-st.title("🚀 LinkedInForge")
+# ==============================================================================
+# UI MAIN LOOP
+# ==============================================================================
 
+st.title("🚀 LinkedInForge")
 
 # ---------------------------------------------------------------- TOPIC
 if st.session_state.phase == "topic":
     st.caption("Step 1 — what are you writing about?")
 
-    # --- NEW CONTENT DISCOVERY UI ---
     st.markdown("### 💡 Need inspiration?")
     categories = [
         "AI & Deep Learning", 
@@ -185,10 +170,8 @@ if st.session_state.phase == "topic":
         "World Affairs"
     ]
     
-    # st.pills is great for this, available in newer Streamlit versions
     selected_category = st.pills("Select a domain to see trending news:", categories)
     
-    # We define the tone selector early so it applies to both UI paths
     selected_tone = st.selectbox(
         "Select Post Tone & Vibe:",
         [
@@ -200,25 +183,19 @@ if st.session_state.phase == "topic":
         ]
     )
 
-    # 1. THE CURATOR PATH (News API)
-# 1. THE CURATOR PATH (News API)
     if selected_category:
         with st.spinner(f"Curating trending topics in {selected_category}..."):
             try:
                 curated_data = get_curated_topics(selected_category)
-                
-                # --- GUARD CLAUSE TO PREVENT NONE CRASHES ---
                 if curated_data and curated_data.articles:
                     st.markdown(f"**Trending in {selected_category}:**")
                     
-                    # Render the cards
                     for idx, article in enumerate(curated_data.articles):
                         with st.container(border=True):
                             st.subheader(article.headline)
                             st.write(article.summary)
                             
                             unique_key = f"{article.url}_{idx}"
-                            # The handoff button
                             if st.button("Write about this", key=unique_key, type="secondary"):
                                 st.session_state.topic = f"{article.headline}: {article.summary}"
                                 st.session_state.tone = selected_tone
@@ -238,7 +215,6 @@ if st.session_state.phase == "topic":
 
     st.divider()
 
-    # 2. THE MANUAL PATH (Original UI)
     st.markdown("### ✍️ Or enter your own topic")
     topic = st.text_input(
         "Topic",
@@ -270,23 +246,17 @@ elif st.session_state.phase == "answers":
         "generic."
     )
 
-    # Note: this is saved to a local variable 'answers'
     answers = collect_answers(st.session_state.questions.questions)
-
     filled = sum(1 for a in answers if a.answer.strip())
-    
-    # Safely handle the progress bar division
     total_questions = len(answers) if len(answers) > 0 else 1
     st.progress(filled / total_questions, text=f"{filled} of {len(answers)} answered")
 
     col1, col2 = st.columns([1, 3])
     with col1:
-        # If they skip the probe, we just build the brief with their current answers
         if st.button("Skip to brief", use_container_width=True):
             build_brief(answers)          
 
     with col2:
-        # If they continue, save their answers, generate probe questions, and move to probe phase
         if st.button("Continue", type="primary", use_container_width=True):
             st.session_state.answers = answers  
             
@@ -301,7 +271,6 @@ elif st.session_state.phase == "answers":
             else:
                 build_brief(answers)
 
-
 # ---------------------------------------------------------------- PROBE
 elif st.session_state.phase == "probe":
     st.caption("One more thing")
@@ -312,26 +281,22 @@ elif st.session_state.phase == "probe":
         "you'd rather not answer."
     )
 
-    # Collect the new follow-up answers
     probe_answers = collect_answers(st.session_state.probe_questions.questions, is_probe=True)
 
     st.divider()
     col1, col2 = st.columns([1, 2])
 
     with col1:
-        # If they skip, build the brief using only the first round of answers
         if st.button("Skip these", use_container_width=True):
             build_brief(st.session_state.answers)
 
     with col2:
-        # If they continue, merge the first round of answers with the probe answers
         if st.button("Continue", type="primary", use_container_width=True):
             build_brief(st.session_state.answers + probe_answers, was_probed=True)
 
 # ---------------------------------------------------------------- BRIEF
 elif st.session_state.phase == "brief":
     brief = st.session_state.brief
-
     st.caption("Step 3 — check this before we write")
     st.subheader("The angle")
     st.markdown(
@@ -341,7 +306,6 @@ elif st.session_state.phase == "brief":
     )
 
     render_brief(brief)
-
     gaps = brief.thin_fields()
 
     if not brief.evidence:
@@ -358,7 +322,6 @@ elif st.session_state.phase == "brief":
         if st.button("Back to answers", type="primary", use_container_width=True):
             st.session_state.phase = "answers"
             st.rerun()
-
         st.stop()
 
     if gaps:
@@ -367,11 +330,9 @@ elif st.session_state.phase == "brief":
 
     st.divider()
 
-    # --- NEW: HUMAN-IN-THE-LOOP WEB SEARCH ---
     st.markdown("### 🌐 Add Live Context (Optional)")
     st.caption("Ground your post with real-time industry data, news, or benchmarks.")
     
-    # Initialize search cache to prevent re-fetching on every checkbox click
     if "raw_search_results" not in st.session_state:
         st.session_state.raw_search_results = None
         st.session_state.selected_references = []
@@ -381,7 +342,6 @@ elif st.session_state.phase == "brief":
     if fetch_context:
         if st.session_state.raw_search_results is None:
             with st.spinner("Fetching live context..."):
-                # Use the brief's thesis to guide the Tavily search
                 st.session_state.raw_search_results = fetch_live_context(
                     topic=st.session_state.topic, 
                     thesis=brief.thesis or ""
@@ -389,13 +349,9 @@ elif st.session_state.phase == "brief":
         
         if st.session_state.raw_search_results:
             st.write("**Select the facts you want to explicitly include in your draft:**")
-            
-            # Reset selections before rebuilding
             current_selections = []
-            
             for idx, result in enumerate(st.session_state.raw_search_results):
                 with st.container(border=True):
-                    # Checkbox for each article
                     if st.checkbox(f"**{result['title']}**", key=f"ref_{idx}"):
                         current_selections.append(result)
                     st.caption(f"{result['snippet']}")
@@ -409,10 +365,8 @@ elif st.session_state.phase == "brief":
         st.session_state.raw_search_results = None
 
     st.divider()
-    # -----------------------------------------
 
     col1, col2 = st.columns([1, 2])
-
     with col1:
         if st.button("Back to answers", use_container_width=True):
             st.session_state.phase = "answers"
@@ -421,26 +375,94 @@ elif st.session_state.phase == "brief":
     with col2:
         if st.button("Write the post", type="primary", use_container_width=True):
             try:
-                with st.spinner("Generating and refining (this takes a minute)..."):
-                    # PASS THE SELECTED REFERENCES TO THE GRAPH
-                    st.session_state.result = workflow_app.invoke(
+                with st.spinner("Agents are drafting, evaluating, and routing..."):
+                    # Use STREAM instead of invoke so the graph hits the HITL breakpoint
+                    for event in workflow_app.stream(
                         initial_state(
                             st.session_state.topic, 
                             brief, 
                             st.session_state.selected_references
-                        )
-                    )
+                        ),
+                        config=config
+                    ):
+                        node_name = list(event.keys())[0]
+                        st.toast(f"Agent finished: {node_name}")
+                        
             except Exception as e:
-                st.error(
-                    "Something went wrong while generating your post. Your "
-                    "interview and brief are still saved — you can try again."
-                )
+                st.error("Something went wrong while generating your post.")
                 st.exception(e)
                 st.stop()
-            save_run(st.session_state.get("brief_id"), st.session_state.result)
-
-            st.session_state.phase = "result"
+                
+            # Transition to the review station instead of the result page
+            st.session_state.phase = "review"
             st.rerun()
+
+# ---------------------------------------------------------------- REVIEW (HITL)
+elif st.session_state.phase == "review":
+    st.caption("Step 4 — Human Review")
+    st.subheader("Approve or Revise")
+    
+    current_state = workflow_app.get_state(config)
+    
+    # Check if the graph successfully paused at the breakpoint
+    if current_state.next and current_state.next[0] == "finalize":
+        st.warning("⏸️ Autonomous routing paused. The draft is ready for your review.")
+        
+        state_values = current_state.values
+        draft = state_values.get("best_post", state_values.get("post", ""))
+        
+        verdict = state_values.get("verdict")
+        if verdict:
+            st.caption(f"Craft Score: {verdict.craft_score}/10 | Faithfulness: {verdict.faithfulness}/10")
+
+        # Text area allows manual tweaks before finalizing
+        editable_draft = st.text_area("Best Draft So Far (Edit directly, or request AI revisions below):", 
+                                      value=draft, height=350)
+        
+        with st.form("hitl_form"):
+            feedback = st.text_input("Request AI revisions (e.g., 'Make it punchier', 'Fix the ending'):")
+            
+            col1, col2 = st.columns(2)
+            approve_btn = col1.form_submit_button("✅ Approve & Publish", type="primary")
+            revise_btn = col2.form_submit_button("🔄 Route to Repair Agents")
+            
+            if approve_btn:
+                with st.spinner("Finalizing post..."):
+                    # Inject manual edits into the state before finalizing
+                    if editable_draft != draft:
+                        workflow_app.update_state(config, {"post": editable_draft})
+                    
+                    final_result = workflow_app.invoke(None, config=config)
+                    
+                    st.session_state.result = final_result
+                    save_run(st.session_state.get("brief_id"), final_result)
+                    
+                    st.session_state.phase = "result"
+                    st.rerun()
+                    
+            elif revise_btn:
+                if not feedback:
+                    st.error("Please provide revision instructions if sending back to the repair agents.")
+                else:
+                    with st.spinner(f"Routing back for revisions..."):
+                        # Inject human feedback into the state
+                        workflow_app.update_state(
+                            config,
+                            {"evaluation": {"feedback": f"HUMAN OVERRIDE: {feedback}"}},
+                            as_node="evaluate"
+                        )
+                        # Resume graph execution
+                        for event in workflow_app.stream(None, config=config):
+                            node_name = list(event.keys())[0]
+                            st.toast(f"Agent finished: {node_name}")
+                        
+                        st.rerun()
+    else:
+        # Fallback if the graph hit MAX_ITERATIONS and didn't pause properly
+        st.session_state.result = current_state.values
+        save_run(st.session_state.get("brief_id"), st.session_state.result)
+        st.session_state.phase = "result"
+        st.rerun()
 
 # ---------------------------------------------------------------- RESULT
 elif st.session_state.phase == "result":
@@ -499,62 +521,47 @@ elif st.session_state.phase == "result":
         ["📝 Final Post", "🎯 Your Brief", "📊 Evaluation", "📈 Scores"]
     )
 
-    # with tab1:
-    #     st.text_area("Final post", value=result["post"], height=400,
-    #                  label_visibility="collapsed")
-
     with tab1:
-            st.subheader("📝 Final Post")
-            
-            # 1. Grab the winning draft
-            winning_post = result.get("best_post", result.get("post", ""))
-            
-            # 2. Split the post into Hook (first paragraph) and Body (the rest)
-            # Using double newline as the paragraph separator
-            paragraphs = winning_post.split("\n\n")
-            original_hook = paragraphs[0] if paragraphs else ""
-            post_body = "\n\n".join(paragraphs[1:]) if len(paragraphs) > 1 else ""
+        st.subheader("📝 Final Post")
+        
+        winning_post = result.get("best_post", result.get("post", ""))
+        
+        paragraphs = winning_post.split("\n\n")
+        original_hook = paragraphs[0] if paragraphs else ""
+        post_body = "\n\n".join(paragraphs[1:]) if len(paragraphs) > 1 else ""
 
-            # 3. Retrieve the safe, filtered alternative hooks
-            # (Checking 'best_alternative_hooks' from the evaluation node)
-            alt_hooks = result.get("best_alternative_hooks", result.get("alternative_hooks", []))
+        alt_hooks = result.get("best_alternative_hooks", result.get("alternative_hooks", []))
 
-            # 4. Create a dictionary to map radio labels to the actual hook text
-            hook_options = {
-                "Original (Keep as generated)": original_hook
-            }
-            
-            # Add the alternative hooks to the options
-            for h in alt_hooks:
-                # Create a clean label (truncate if the text is too long for the radio button)
-                snippet = h['text'][:60] + "..." if len(h['text']) > 60 else h['text']
-                label = f"{h['angle']}: {snippet}"
-                hook_options[label] = h['text']
+        hook_options = {
+            "Original (Keep as generated)": original_hook
+        }
+        
+        for h in alt_hooks:
+            snippet = h['text'][:60] + "..." if len(h['text']) > 60 else h['text']
+            label = f"{h['angle']}: {snippet}"
+            hook_options[label] = h['text']
 
-            # 5. Render the UI selection if alternative hooks exist
-            if alt_hooks:
-                st.markdown("**Want a different opening? Swap the hook:**")
-                selected_label = st.radio(
-                    "Alternative Hooks", 
-                    options=list(hook_options.keys()), 
-                    label_visibility="collapsed"
-                )
-                selected_hook_text = hook_options[selected_label]
-                st.divider()
-            else:
-                selected_hook_text = original_hook
-                st.caption("No alternative hooks passed the faithfulness check.")
-
-            # 6. Reconstruct the final post dynamically
-            final_display_text = f"{selected_hook_text}\n\n{post_body}" if post_body else selected_hook_text
-
-            # 7. Render the final text area
-            st.text_area(
-                "Final post", 
-                value=final_display_text, 
-                height=400,
+        if alt_hooks:
+            st.markdown("**Want a different opening? Swap the hook:**")
+            selected_label = st.radio(
+                "Alternative Hooks", 
+                options=list(hook_options.keys()), 
                 label_visibility="collapsed"
             )
+            selected_hook_text = hook_options[selected_label]
+            st.divider()
+        else:
+            selected_hook_text = original_hook
+            st.caption("No alternative hooks passed the faithfulness check.")
+
+        final_display_text = f"{selected_hook_text}\n\n{post_body}" if post_body else selected_hook_text
+
+        st.text_area(
+            "Final post", 
+            value=final_display_text, 
+            height=400,
+            label_visibility="collapsed"
+        )
 
     with tab2:
         st.caption("The angle the post was written from.")

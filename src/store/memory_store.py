@@ -6,6 +6,7 @@ a storage failure never stops someone writing a post. The worst case is an
 interview that asks something it has asked before.
 """
 from langchain_nvidia_ai_endpoints import NVIDIAEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
@@ -18,7 +19,7 @@ from src.schemas.perspective import UserMemory
 # How many items of each kind to load. The database keeps everything; this
 # caps what reaches the prompt. Replaces the list slicing in absorb().
 RECALL_LIMIT = 20
-embedder = NVIDIAEmbeddings(model="nvidia/nemotron-3-embed-1b")
+embedder = GoogleGenerativeAIEmbeddings(model="gemini-embedding-001")
 
 
 def _kind_contents(session, user_id, kind: str, search_vector: list[float], limit: int) -> list[str]:

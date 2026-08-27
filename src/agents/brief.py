@@ -3,10 +3,12 @@ from dotenv import load_dotenv
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 from src.prompts.brief import BRIEF_PROMPT
 from src.schemas.perspective import Answer, PerspectiveBrief
 from src.utils.json_output import extract_json
+#from src.config.settings import GEMINI_MODEL, GEMINI_API_KEY
 
 load_dotenv(override=True)
 
@@ -28,13 +30,13 @@ class BriefAgent:
 
     def __init__(
         self,
-        model_name: str = "meta/llama-3.2-11b-vision-instruct",
+        model_name: str = "gemini-3.6-flash",
         temperature: float = 0.1,
     ):
-        self.llm = ChatNVIDIA(
+        self.llm = ChatGoogleGenerativeAI(
             model=model_name,
             temperature=temperature,
-            api_key=os.getenv("NVIDIA_API_KEY"),
+            api_key=os.getenv("GEMINI_API_KEY"),
             max_retries=1,
             timeout=60,
         )

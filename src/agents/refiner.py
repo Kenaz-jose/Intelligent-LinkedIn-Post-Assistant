@@ -7,6 +7,7 @@ from langchain_core.output_parsers import PydanticOutputParser
 
 from src.schemas.refiner import RefinerResult
 from src.prompts.refiner import REFINER_PROMPT
+from src.config.settings import NVIDIA_MODEL, NVIDIA_API_KEY
 
 load_dotenv(override=True)
 
@@ -16,13 +17,13 @@ class RefinerAgent:
     """
     def __init__(
         self,
-        model_name: str = "meta/llama-3.2-11b-vision-instruct",
+        model_name: str = NVIDIA_MODEL,
         temperature: float = 0.4,
     ):
         self.llm = ChatNVIDIA(
             model=model_name,
             temperature=temperature,
-            api_key=os.getenv("NVIDIA_API_KEY"),
+            api_key=NVIDIA_API_KEY,
             max_retries=1,
             timeout=60
         )

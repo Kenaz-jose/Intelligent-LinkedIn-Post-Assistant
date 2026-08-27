@@ -8,6 +8,8 @@ from src.prompts.probe import PROBE_PROMPT
 from src.prompts.interview import INTERVIEW_QUESTIONS_PROMPT
 from src.schemas.perspective import InterviewQuestion, QuestionSet, Answer
 from src.utils.json_output import extract_json
+#from src.config.settings import NVIDIA_MODEL, NVIDIA_API_KEY
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 load_dotenv(override=True)
 
@@ -24,11 +26,11 @@ class InterviewerAgent:
     same four safe questions for every topic.
     """
 
-    def __init__(self, model_name: str = "meta/llama-3.2-11b-vision-instruct", temperature: float = 0.8):
-        self.llm = ChatNVIDIA(
+    def __init__(self, model_name: str = "gemini-3.6-flash", temperature: float = 0.8):
+        self.llm = ChatGoogleGenerativeAI(
             model=model_name,
             temperature=temperature,
-            api_key=os.getenv("NVIDIA_API_KEY"),
+            api_key=os.getenv("GEMINI_API_KEY"),
             max_retries=1,
             timeout=60,
         )
@@ -36,10 +38,10 @@ class InterviewerAgent:
         self.prompt = ChatPromptTemplate.from_template(INTERVIEW_QUESTIONS_PROMPT)
         self.chain = self.prompt | self.llm | StrOutputParser()
 
-        self.probe_llm = ChatNVIDIA(
+        self.probe_llm = ChatGoogleGenerativeAI(
             model=model_name,
             temperature=0.4,
-            api_key=os.getenv("NVIDIA_API_KEY"),
+            api_key=os.getenv("GEMINI_API_KEY"),
             max_retries=1,
             timeout=60,
         )
