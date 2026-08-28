@@ -1,145 +1,85 @@
-# 🚀 Intelligent LinkedIn Post Assistant
+# 🚀 Intelligent LinkedIn Post Assistant — LinkedInForge
 
-> Forge compelling LinkedIn content through multi-agent intelligence.
+> A self-healing, multi-agent AI pipeline for creating fact-checked, highly engaging, and authentic LinkedIn content.
 
-An AI-powered multi-agent system that transforms ideas into polished LinkedIn posts through iterative evaluation, reflection, and refinement.
+Traditional AI writing tools generate generic content and stop. Professional writing is inherently iterative — it requires drafting, strict fact-checking, external research, evaluation, and targeted stylistic revisions.
 
-Built with **LangGraph**, **LangChain**, **Ollama**, **FastAPI**, and **Streamlit**, this project explores how AI agents can collaborate to mimic the human writing process: drafting, critiquing, reflecting, and revising until high-quality output is achieved.
+**LinkedInForge** is a multi-agent AI system built with **LangGraph**, **LangChain**, and **Streamlit** that transforms a user's raw perspective and first-hand experience into a polished LinkedIn post.
 
----
+Instead of relying on a single LLM call, LinkedInForge orchestrates specialized agents — including a **Generator, Evaluator, Fact Checker, Hook Reviser, Style Reviser, and Researcher** — that collaborate through a stateful workflow.
 
-![Python](https://img.shields.io/badge/Python-3.11-blue)
-![LangGraph](https://img.shields.io/badge/LangGraph-Multi--Agent-green)
-![Ollama](https://img.shields.io/badge/Ollama-Local%20LLMs-black)
-![Streamlit](https://img.shields.io/badge/UI-Streamlit-red)
-![License](https://img.shields.io/badge/License-MIT-yellow)
+The system also includes a **Factual Firewall**, **autonomous web research**, **dynamic routing**, and **Human-in-the-Loop (HITL)** checkpoints to reduce hallucinations and preserve the user's authentic voice.
 
 ---
 
-## 🎯 Why This Project?
+## ✨ Key Features
 
-Most AI writing tools generate content once and stop there.
+### 🧠 Perspective Interviewing
 
-Professional writing, however, is inherently iterative. People naturally draft, critique, reflect, and revise before publishing.
+Before generating a post, LinkedInForge interviews the user to extract:
 
-This project explores how **multi-agent systems** can replicate that process by combining generation, evaluation, reflection, and refinement into a feedback loop that continuously improves LinkedIn posts.
+* Personal opinions and perspectives
+* First-hand experiences
+* Technical details
+* Metrics and evidence
+* Contrarian viewpoints
+* Lessons learned
 
-Rather than asking:
+This creates a structured **Perspective Brief** that becomes the foundation of the generated content.
 
-> "Can an LLM generate a LinkedIn post?"
+### 🛡️ Factual Firewall
 
-This project asks:
+A dedicated `FactCheckerAgent` validates claims against the available source context.
 
-> "Can multiple AI agents collaborate to improve professional writing through structured feedback and iterative refinement?"
+It identifies and removes:
 
----
+* Unsupported metrics
+* Fabricated claims
+* Contradictions
+* Unverified technical statements
+* Hallucinated information
 
-## ✨ Features
+The goal is to ensure that the final post remains **faithful to the user's actual knowledge and verified evidence**.
 
-* 📝 Generate LinkedIn posts from simple prompts
-* 🤖 Multi-agent architecture powered by LangGraph
-* 📊 Evaluate posts across multiple quality dimensions
-* 🧠 Reflection-based improvement planning
-* 🔄 Iterative refinement loops
-* 📈 Interactive Streamlit dashboard
-* ⚡ FastAPI service layer for production readiness
-* 🦙 Runs entirely locally using Ollama
-* 🧩 Structured outputs using Pydantic models
+### 🌐 Autonomous Web Research
 
----
+When the system identifies a claim that requires external validation, the `ResearcherAgent` can:
 
-## 🎥 Demo
+1. Identify the missing information.
+2. Formulate a targeted search query.
+3. Search authoritative sources through Tavily.
+4. Extract relevant evidence.
+5. Present the findings for human approval.
+6. Inject approved information back into the workflow.
 
-<img width="100%" alt="Demo" src="docs/screenshots/demo1.png">
+### ⏸️ Human-in-the-Loop
 
-<img width="100%" alt="Demo" src="docs/screenshots/demo2.png">
+LinkedInForge does not blindly publish AI-generated content.
 
-<img width="100%" alt="Demo" src="docs/screenshots/demo3.png">
+The workflow can pause at important decision points so the user can:
 
-<img width="100%" alt="Demo" src="docs/screenshots/demo4.png">
+* Review external research
+* Approve or reject facts
+* Review the generated post
+* Provide revision instructions
+* Edit the final content
 
----
+### 🔀 Dynamic Switchboard Routing
 
-## 🏗️ System Architecture
+Instead of sending every failed draft through the same revision process, the evaluator determines **what needs to be fixed**.
 
-### Workflow Diagram
+The Router Agent can direct the draft to specialized repair agents such as:
 
-```text
-┌──────────────────────────┐
-│          User            │
-│   Enters Topic/Prompt    │
-└────────────┬─────────────┘
-             │
-             ▼
-┌──────────────────────────┐
-│     Generator Agent      │
-│──────────────────────────│
-│ Creates initial draft    │
-└────────────┬─────────────┘
-             │
-             ▼
-┌──────────────────────────┐
-│     Evaluator Agent      │
-│──────────────────────────│
-│ Scores the draft on:     │
-│ • Hook                   │
-│ • Clarity                │
-│ • Engagement             │
-│ • Authenticity           │
-│ • Professionalism        │
-│ • Structure              │
-│ • Faithfulness           │
-└────────────┬─────────────┘
-             │
-             ▼
-┌──────────────────────────┐
-│     Reflector Agent      │
-│──────────────────────────│
-│ Identifies:              │
-│ • Priority issues        │
-│ • Strengths to preserve  │
-│ • Improvement operations │
-└────────────┬─────────────┘
-             │
-             ▼
-┌──────────────────────────┐
-│      Refiner Agent       │
-│──────────────────────────│
-│ Rewrites the post using  │
-│ the reflection plan      │
-└────────────┬─────────────┘
-             │
-             ▼
-      Needs Improvement?
-             │
-      ┌──────┴──────┐
-      │             │
-      ▼             ▼
-     YES            NO
-      │             │
-      ▼             ▼
-Back to Evaluator   Final Output
-```
+* **Fact Checker** → factual problems
+* **Hook Reviser** → weak opening
+* **Style Reviser** → tone and writing style
+* **Researcher** → missing external evidence
 
----
+This creates targeted iterative refinement rather than repeatedly regenerating the entire post.
 
-## 🔄 Workflow
+### 📊 Multi-Dimensional Evaluation
 
-The assistant follows a reflection-driven optimization loop inspired by emerging research in multi-agent systems.
-
-### Step 1: Generate
-
-The **Generator Agent** transforms the user's idea into an initial LinkedIn draft.
-
-Example prompt:
-
-> "I got promoted to Engineering Manager after 5 years as a software engineer. Write a LinkedIn post about this achievement."
-
----
-
-### Step 2: Evaluate
-
-The **Evaluator Agent** analyzes the draft and assigns scores for:
+Every generated post is evaluated across multiple dimensions:
 
 * Hook
 * Clarity
@@ -149,242 +89,195 @@ The **Evaluator Agent** analyzes the draft and assigns scores for:
 * Structure
 * Faithfulness
 
----
-
-### Step 3: Reflect
-
-The **Reflector Agent** identifies:
-
-* Strengths to preserve
-* Weaknesses to address
-* Priority improvements
-* Specific refinement operations
+The evaluation results determine whether the post should be finalized or sent back through another repair cycle.
 
 ---
 
-### Step 4: Refine
+# 🏗️ System Architecture
 
-The **Refiner Agent** rewrites the post according to the reflection plan.
+LinkedInForge is implemented as a **stateful LangGraph workflow**.
 
----
-
-### Step 5: Iterate
-
-If the post still requires improvement:
+The graph uses conditional routing, iterative repair loops, early stopping, and Human-in-the-Loop checkpoints.
 
 ```text
-Evaluate → Reflect → Refine
+┌──────────────────────────────────────────────────────────────┐
+│ 1. INTERVIEW STAGE                                           │
+│                                                              │
+│ Extract user experience, opinions, metrics and perspective   │
+│                     ↓                                        │
+│              Perspective Brief                               │
+└─────────────────────────────┬────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────┐
+│ 2. GENERATION                                                │
+│                                                              │
+│ Generator Agent creates the initial LinkedIn post            │
+└─────────────────────────────┬────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────┐
+│ 3. EVALUATION                                                │
+│                                                              │
+│ Evaluator Agent scores the draft and identifies weaknesses   │
+└─────────────────────────────┬────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────┐
+│ 4. DYNAMIC SWITCHBOARD                                       │
+│                                                              │
+│ Router analyzes evaluator feedback and selects a repair path │
+└───────────────┬──────────────┬──────────────┬────────────────┘
+                │              │              │
+                ▼              ▼              ▼
+         ┌────────────┐ ┌────────────┐ ┌────────────┐
+         │ FACT       │ │ HOOK       │ │ STYLE      │
+         │ CHECKER    │ │ REVISER    │ │ REVISER    │
+         └──────┬─────┘ └──────┬─────┘ └──────┬─────┘
+                │              │              │
+                └──────────────┼──────────────┘
+                               │
+                               ▼
+                        ┌──────────────┐
+                        │ EVALUATION   │
+                        │ LOOP         │
+                        └──────┬───────┘
+                               │
+                               │ Research Required
+                               ▼
+                        ┌──────────────┐
+                        │  RESEARCHER  │
+                        │    AGENT     │
+                        └──────┬───────┘
+                               │
+                               ▼
+                       ┌────────────────┐
+                       │ HITL APPROVAL  │
+                       │ Review Facts   │
+                       └───────┬────────┘
+                               │
+                               ▼
+                          EVALUATION
+                               │
+                               │ Pass
+                               ▼
+┌──────────────────────────────────────────────────────────────┐
+│ 5. FINAL REVIEW                                              │
+│                                                              │
+│ Human reviews, edits, or provides final revision instructions│
+└─────────────────────────────┬────────────────────────────────┘
+                              │
+                              ▼
+                     ┌─────────────────┐
+                     │ FINAL LINKEDIN  │
+                     │      POST       │
+                     └─────────────────┘
 ```
 
-continues until the stopping criteria are met.
+---
+
+# ⚙️ Tech Stack
+
+| Component           | Technology | Purpose                                                  |
+| ------------------- | ---------- | -------------------------------------------------------- |
+| **Orchestration**   | LangGraph  | Stateful multi-agent workflows, routing, loops, and HITL |
+| **LLM Integration** | LangChain  | LLM abstraction and structured agent interactions        |
+| **LLM Provider**    | Groq       | High-speed LLM inference                                 |
+| **Web Research**    | Tavily     | Autonomous web search and evidence retrieval             |
+| **Data Validation** | Pydantic   | Structured outputs and schema validation                 |
+| **Frontend**        | Streamlit  | Interactive application interface                        |
+| **Visualization**   | Plotly     | Evaluation and scoring visualizations                    |
+| **Backend**         | FastAPI    | API routes and service layer                             |
 
 ---
 
-## 📊 Evaluation Dimensions
-
-| Dimension       | Description                        |
-| --------------- | ---------------------------------- |
-| Hook            | Ability to capture attention       |
-| Clarity         | Ease of understanding              |
-| Engagement      | Likelihood of audience interaction |
-| Authenticity    | Genuine professional voice         |
-| Professionalism | Appropriateness for LinkedIn       |
-| Structure       | Logical flow and readability       |
-| Faithfulness    | Accuracy to the original intent    |
-
----
-
-## 🖥️ Streamlit Interface
-
-### Inputs
-
-* Topic / Prompt textbox
-* Generate & Optimize button
-
-### Outputs
-
-* 📝 Final LinkedIn Post
-* 📊 Evaluation Report
-* 🧠 Reflection Plan
-* 📈 Quality Score Dashboard
-* 🔁 Iteration Count
-
----
-
-## 📈 Example Optimization Cycle
-
-### Prompt
+# 📂 Project Structure
 
 ```text
-I got promoted to Engineering Manager after 5 years as a software engineer.
-```
-
-↓
-
-### Initial Draft
-
-```text
-I got promoted today. Hard work pays off.
-```
-
-↓
-
-### Evaluation
-
-```text
-Hook: 7
-Clarity: 8
-Engagement: 6
-```
-
-↓
-
-### Reflection
-
-```text
-• Improve opening sentence
-• Increase storytelling
-• Add actionable takeaway
-```
-
-↓
-
-### Refined Draft
-
-```text
-Five years ago, I started my journey as a software engineer with more questions than answers.
-
-Today, I'm excited to share that I've been promoted to Engineering Manager.
-
-This milestone reminded me that growth rarely happens overnight. It is built through consistency, curiosity, and the willingness to learn from every challenge.
-
-What has been the biggest lesson in your career journey so far?
-```
-
-↓
-
-### Final Optimized LinkedIn Post
-
----
-
-## 🧠 What I Learned
-
-Through this project, I gained hands-on experience with:
-
-* Designing stateful multi-agent workflows using LangGraph
-* Building structured outputs with Pydantic
-* Implementing reflection-driven optimization loops
-* Developing FastAPI services for AI systems
-* Creating interactive Streamlit interfaces
-* Running local LLMs using Ollama
-* Engineering prompts for collaborative AI agents
-* Managing iterative agent coordination
-
----
-
-## 📂 Project Structure
-
-```text
-LinkedIn/
+LinkedInForge/
+│
+├── data/
+│   └── user_memory.json       # Local user data / memory
+│
+├── docs/                      # Documentation and screenshots
 │
 ├── src/
-│   ├── agents/
-│   │   ├── generator.py
-│   │   ├── evaluator.py
-│   │   ├── reflector.py
-│   │   ├── refiner.py
-│   │   └── workflow.py
 │   │
-│   ├── api/
-│   │   ├── main.py
-│   │   ├── routes.py
-│   │   └── schema.py
-|   |   └── service.py
+│   ├── agents/                # Specialized LangGraph agents
+│   │   ├── generator/
+│   │   ├── evaluator/
+│   │   ├── fact_checker/
+│   │   ├── researcher/
+│   │   └── revisers/
 │   │
-│   ├── prompts/
-│   │   ├── generator.py
-│   │   ├── evaluator.py
-│   │   ├── reflector.py
-│   │   └── refiner.py
+│   ├── api/                   # FastAPI backend
 │   │
-│   ├── schemas/
-│   │   ├── evaluation.py
-│   │   ├── reflection.py
-│   │   └── operations.py
+│   ├── config/                # Configuration and environment settings
 │   │
-│   ├── utils/
-│   │   ├── helpers.py
-│   │   └── formatting.py
+│   ├── db/                    # Database configuration and models
 │   │
-│   ├── UI/
-│   │   └── streamlit.py
+│   ├── evaluation/            # Evaluation logic and routing policies
 │   │
-│   └── main.py
+│   ├── prompts/               # Agent prompt templates
+│   │
+│   ├── schemas/               # Pydantic models and graph state
+│   │
+│   ├── services/              # External service integrations
+│   │
+│   ├── store/                 # State and run persistence
+│   │
+│   ├── UI/                    # Streamlit interface
+│   │
+│   └── utils/                 # Utilities, parsing and logging
 │
-├── docs/
-│   ├── screenshots/
-│   └── architecture/
+├── tests/                     # Unit and integration tests
 │
-├── requirements.txt
-├── README.md
-├── .gitignore
-└── LICENSE
+├── main.py                    # Application entry point
+├── test_hitl.py               # HITL workflow testing
+├── visualize_interview.py     # Interview flow visualization
+├── requirements.txt           # Python dependencies
+└── README.md
 ```
 
 ---
 
-## ⚙️ Tech Stack
+# 🚀 Installation & Setup
 
-### AI & Orchestration
-
-* LangGraph
-* LangChain
-* Ollama
-
-### Backend
-
-* FastAPI
-* Pydantic
-
-### Frontend
-
-* Streamlit
-* Pandas
-* Plotly
-
----
-
-## 🚀 Installation
-
-### Clone the Repository
+## 1. Clone the Repository
 
 ```bash
-git clone https://github.com/Kenaz-jose/intelligent-linkedin-post-assistant.git
+git clone https://github.com/Kenaz-jose/Intelligent-LinkedIn-Post-Assistant.git
 
-cd intelligent-linkedin-post-assistant
+cd Intelligent-LinkedIn-Post-Assistant
+```
+
+To work with the development branch:
+
+```bash
+git checkout develop
 ```
 
 ---
 
-### Create Virtual Environment
+## 2. Create a Virtual Environment
 
-#### Windows
+### Linux / macOS
+
+```bash
+python3 -m venv linkedin
+source linkedin/bin/activate
+```
+
+### Windows
 
 ```bash
 python -m venv linkedin
 linkedin\Scripts\activate
 ```
 
-#### macOS / Linux
-
-```bash
-python -m venv linkedin
-source linkedin/bin/activate
-```
-
 ---
 
-### Install Dependencies
+## 3. Install Dependencies
 
 ```bash
 pip install -r requirements.txt
@@ -392,84 +285,211 @@ pip install -r requirements.txt
 
 ---
 
-## 🦙 Ollama Setup
+## 4. Configure Environment Variables
 
-Install Ollama:
+Create a `.env` file in the project root:
 
-https://ollama.com/
-
-Pull your preferred model:
-
-```bash
-ollama pull llama3
+```env
+GROQ_API_KEY=your_groq_api_key_here
+TAVILY_API_KEY=your_tavily_api_key_here
 ```
 
-Start Ollama:
-
-```bash
-ollama serve
-```
+> **Important:** Never commit your `.env` file or expose API keys publicly.
 
 ---
 
-## ▶️ Running the Application
+# ▶️ Usage
 
-### Streamlit Dashboard
+Start the Streamlit application:
 
 ```bash
 streamlit run src/UI/streamlit.py
 ```
 
-Open:
+The application will launch the interactive LinkedInForge dashboard.
+
+---
+
+# 🔄 Workflow
+
+### 1. Perspective Interview
+
+Select a topic or trending news item and answer a series of targeted questions.
+
+The system extracts your:
+
+* Perspective
+* Experience
+* Technical knowledge
+* Evidence
+* Opinions
+* Metrics
+
+These responses are converted into a structured **Perspective Brief**.
+
+---
+
+### 2. Autonomous Drafting
+
+The Generator Agent creates the initial LinkedIn post using the Perspective Brief.
+
+The draft then enters the evaluation pipeline.
+
+---
+
+### 3. Evaluation
+
+The Evaluator Agent analyzes the draft across multiple dimensions and identifies problems such as:
+
+* Weak hook
+* Poor structure
+* Unsupported claims
+* Missing evidence
+* Generic writing
+* Low authenticity
+* Poor engagement potential
+
+---
+
+### 4. Dynamic Repair
+
+The Router Agent determines which specialized agent should handle the problem.
+
+For example:
 
 ```text
-http://localhost:8501
+Weak Hook
+    ↓
+Hook Reviser
+    ↓
+Evaluation
+
+Unsupported Claim
+    ↓
+Fact Checker
+    ↓
+Evaluation
+
+Missing Evidence
+    ↓
+Researcher
+    ↓
+HITL Approval
+    ↓
+Evaluation
 ```
 
 ---
 
-### FastAPI Backend
+### 5. HITL Research Review
+
+If external information is required, the workflow pauses.
+
+The user reviews the retrieved evidence and decides which information can be trusted.
+
+Only approved information becomes part of the workflow's trusted context.
+
+---
+
+### 6. Iterative Refinement
+
+The workflow continues through the evaluation → routing → repair cycle until the post satisfies the required quality and faithfulness thresholds.
+
+---
+
+### 7. Final Review
+
+Before completion, the user gets a final opportunity to:
+
+* Edit the post
+* Approve the content
+* Provide revision instructions
+* Reject the draft
+
+The final result is a polished LinkedIn post grounded in the user's perspective and verified evidence.
+
+---
+
+# 🧪 Testing
+
+The repository includes utilities for testing important workflow components.
+
+### Test HITL workflow
 
 ```bash
-uvicorn src.main:app --reload
+python test_hitl.py
 ```
 
-Open API documentation:
+### Visualize the interview workflow
+
+```bash
+python visualize_interview.py
+```
+
+Additional unit and integration tests are located inside:
 
 ```text
-http://127.0.0.1:8000/docs
+tests/
 ```
 
 ---
 
-## 🎯 Future Improvements
+# 🗺️ Future Improvements
 
-* [ ] Post history and session management
-* [ ] Export to PDF / Markdown
-* [ ] Multiple writing styles
-* [ ] A/B post generation
-* [ ] Support for additional social platforms
-* [ ] Cloud deployment
-* [ ] Human-in-the-loop editing
+The project is actively evolving. Planned improvements include:
 
----
-
-## 🤝 Contributing
-
-Contributions, suggestions, and feedback are welcome.
-
-Feel free to open an issue or submit a pull request.
+* [ ] Semantic memory for long-term user voice adaptation
+* [ ] Persistent user profiles and preferences
+* [ ] A/B post generation for different platforms
+* [ ] Support for X, Threads, and other social platforms
+* [ ] Ollama-based local LLM fallback
+* [ ] Post scheduling and publishing
+* [ ] Analytics tracking
+* [ ] Database-backed post history
+* [ ] Long-term content performance feedback loops
+* [ ] Improved source credibility ranking
+* [ ] Multi-model routing based on task complexity
 
 ---
 
-## 📜 License
+# 🤝 Contributing
 
-This project is licensed under the MIT License.
+Contributions, suggestions, bug reports, and feedback are welcome.
+
+To contribute:
+
+1. Fork the repository.
+2. Create a feature branch.
+3. Make your changes.
+4. Add or update tests where appropriate.
+5. Submit a pull request.
+
+For larger changes, consider opening an issue first to discuss the proposed approach.
 
 ---
 
-## 👨‍💻 Author
+# 📜 License
 
-Built by **Kenaz Jose**
+This project is licensed under the **MIT License**.
 
-If you found this project useful, consider giving it a ⭐ on GitHub.
+---
+
+# 👨‍💻 Author
+
+**Kenaz Jose**
+
+Built with ❤️ using **Python, LangGraph, LangChain, Groq, Tavily, and Streamlit**.
+
+If you find LinkedInForge useful, consider giving the repository a ⭐ on GitHub!
+
+---
+
+## ⭐ Project Philosophy
+
+LinkedInForge is built around a simple principle:
+
+> **AI should not replace your perspective — it should amplify it.**
+
+The goal is not to generate more AI-written content.
+
+The goal is to build an agentic system that understands **what you think, what you have experienced, what can be verified, and how your ideas should be communicated** — while keeping the human in control of the final voice.
