@@ -4,11 +4,12 @@ from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 
 from src.prompts.brief import BRIEF_PROMPT
 from src.schemas.perspective import Answer, PerspectiveBrief
 from src.utils.json_output import extract_json
-#from src.config.settings import GEMINI_MODEL, GEMINI_API_KEY
+from src.config.settings import NVIDIA_MODEL, NVIDIA_API_KEY
 
 load_dotenv(override=True)
 
@@ -30,15 +31,29 @@ class BriefAgent:
 
     def __init__(
         self,
-        model_name: str = "gemini-3.6-flash",
+        model_name: str = "openai/gpt-oss-120b",
         temperature: float = 0.1,
     ):
-        self.llm = ChatGoogleGenerativeAI(
-            model=model_name,
-            temperature=temperature,
-            api_key=os.getenv("GEMINI_API_KEY"),
-            max_retries=1,
-            timeout=60,
+        # self.llm = ChatGoogleGenerativeAI(
+        #     model=model_name,
+        #     temperature=temperature,
+        #     api_key=os.getenv("GEMINI_API_KEY"),
+        #     max_retries=1,
+        #     timeout=60,
+        # )
+
+        # self.llm = ChatNVIDIA(
+        #     model=NVIDIA_MODEL,
+        #     temperature=temperature,
+        #     api_key=NVIDIA_API_KEY,
+        #     max_retries=1,
+        #     timeout=150,
+        # )
+
+        self.llm = ChatGroq(
+            model="openai/gpt-oss-120b",
+            temperature=0.2, 
+            max_retries=2
         )
 
         self.prompt = ChatPromptTemplate.from_template(BRIEF_PROMPT)

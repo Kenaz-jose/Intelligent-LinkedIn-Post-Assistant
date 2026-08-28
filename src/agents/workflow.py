@@ -1,4 +1,5 @@
 import os
+from pprint import pprint
 from typing import TypedDict, Optional, List, Dict
 
 from langgraph.graph import StateGraph, END, START
@@ -17,6 +18,7 @@ from src.agents.router import RouterAgent
 from src.agents.fact_checker import FactCheckerAgent
 from src.agents.hook_copywriter import HookCopywriterAgent
 from src.agents.stylist import StylistAgent
+from src.agents.researcher import ResearcherAgent
 
 load_dotenv(override=True)
 tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
@@ -33,6 +35,7 @@ class LinkedInState(TypedDict):
     tone: str
     alternative_hooks: List[Dict[str, str]]
     external_references: List[ReferenceItem]
+    proposed_references: List[ReferenceItem]
 
     evaluation: Optional[object]
     verdict: Optional[object]
@@ -51,7 +54,6 @@ class LinkedInState(TypedDict):
     best_evaluation: Optional[object]
     best_iteration: int
 
-# Initialize Agents
 hook_agent = HookAgent()
 generator_agent = GeneratorAgent()
 evaluator_agent = EvaluatorAgent()
@@ -59,6 +61,7 @@ router_agent = RouterAgent()
 fact_checker_agent = FactCheckerAgent()
 hook_copywriter_agent = HookCopywriterAgent()
 stylist_agent = StylistAgent()
+research_agent = ResearcherAgent()
 
 def brief_block(state: LinkedInState) -> str:
     """The author's brief as prompt text."""
@@ -83,18 +86,20 @@ def generate_node(state: LinkedInState):
 
     print("\n===== GENERATED POST =====")
     print(post)
-    logger.info("Generated initial post")
+    logger.info("Generated post")
+
+    current_iter = state.get("iteration", 0)
 
     return {
         "post": post,
-        "iteration": 0,
-        "repairs_used": 0,
-        "current_craft": 0.0,
-        "previous_craft": -1.0,
-        "best_post": post,
-        "best_verdict": None,
-        "best_evaluation": None,
-        "best_iteration": 0,
+        "iteration": current_iter + 1 if current_iter > 0 else 0,
+        "repairs_used": state.get("repairs_used", 0),
+        "current_craft": state.get("current_craft", 0.0),
+        "previous_craft": state.get("previous_craft", -1.0),
+        "best_post": state.get("best_post") or post,
+        "best_verdict": state.get("best_verdict"),
+        "best_evaluation": state.get("best_evaluation"),
+        "best_iteration": state.get("best_iteration", 0),
     }
 
 def evaluate_node(state: LinkedInState):
@@ -156,6 +161,12 @@ def evaluate_node(state: LinkedInState):
         })
     else:
         print(f"\nDraft not an improvement - keeping iteration {state.get('best_iteration', 0)}")
+    
+    print("\n" + "="*50)
+    print("📋 EVALUATION NODE OUTPUT:")
+    print("="*50)
+    pprint(update, depth=3) 
+    print("="*50 + "\n")
 
     return update
 
@@ -188,24 +199,44 @@ def fix_flow_node(state: LinkedInState):
     repaired_post = stylist_agent.invoke(state["post"], critique)
     return {"post": repaired_post, "iteration": state["iteration"] + 1, "previous_craft": state["current_craft"]}
 
+def research_node(state: LinkedInState):
+    print("\n[RESEARCH] Routing to ResearcherAgent for web data...")
+    critique = _get_critique_string(state.get("evaluation"))
+    proposed = research_agent.search(
+        topic=state.get("topic", ""),
+        critique=critique
+    )
+    print(f"[RESEARCH] Retrieved {len(proposed)} candidate references.")
+    return {"proposed_references": proposed}
+
+def review_research_node(state: LinkedInState):
+    """Pass-through node that acts as the HITL breakpoint for approving web facts."""
+    return {}
+
 def dynamic_switchboard(state: LinkedInState) -> str:
     iteration = state.get("iteration", 0)
     decision = state.get("decision")
     verdict = state.get("verdict")
     evaluation = state.get("evaluation")
+    
+    craft = verdict.craft_score if verdict else 0.0
+    previous_craft = state.get("previous_craft", 0.0)
+
+    if decision and decision.outcome == "ready":
+        print("\n[SWITCHBOARD] Policy engine approved draft. Stopping.")
+        return "finalize"
+
+    if iteration > 1 and craft < previous_craft:
+        print(f"\n[SWITCHBOARD] Early Stopping: Score degraded from {previous_craft} to {craft}. Reverting to best draft.")
+        return "finalize"
 
     # 1. Hard Limits
     if iteration >= MAX_ITERATIONS:
         print(f"\n[SWITCHBOARD] Max iterations hit ({MAX_ITERATIONS}). Forcing stop.")
         return "finalize"
 
-    if decision and decision.outcome == "ready":
-        print("\n[SWITCHBOARD] Policy engine approved draft. Stopping.")
-        return "finalize"
-
     # 2. Agentic Routing
     critique_str = _get_critique_string(evaluation)
-    craft = verdict.craft_score if verdict else 0.0
     passes_faith = verdict.passes_faithfulness if verdict else False
 
     route_decision = router_agent.decide(
@@ -238,12 +269,16 @@ graph.add_node("finalize", finalize_node)
 graph.add_node("fix_facts", fix_facts_node)
 graph.add_node("fix_hook", fix_hook_node)
 graph.add_node("fix_flow", fix_flow_node)
+graph.add_node("research", research_node)
+graph.add_node("review_research", review_research_node)
 
+# Initial Parallel Edges
 graph.add_edge(START, "generate")
 graph.add_edge(START, "generate_hooks")
 graph.add_edge("generate", "evaluate")
 graph.add_edge("generate_hooks", "evaluate")
 
+# Switchboard Edges
 graph.add_conditional_edges(
     "evaluate",
     dynamic_switchboard,
@@ -251,13 +286,24 @@ graph.add_conditional_edges(
         "fix_facts": "fix_facts",
         "fix_hook": "fix_hook",
         "fix_flow": "fix_flow",
+        "research": "research",
         "finalize": "finalize",
     },
 )
 
+# Repair Loops
 graph.add_edge("fix_facts", "evaluate")
 graph.add_edge("fix_hook", "evaluate")
 graph.add_edge("fix_flow", "evaluate")
+
+# Research Loop (Research -> HITL Breakpoint -> Generate Draft)
+graph.add_edge("research", "review_research")
+graph.add_edge("review_research", "generate")
+
 graph.add_edge("finalize", END)
 
-app = graph.compile(checkpointer=memory,interrupt_before=["finalize"])
+# Interrupt before finalize and before research review
+app = graph.compile(
+    checkpointer=memory,
+    interrupt_before=["finalize", "review_research"]
+)

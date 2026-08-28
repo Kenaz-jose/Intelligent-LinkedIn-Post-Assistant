@@ -4,20 +4,28 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from dotenv import load_dotenv
 load_dotenv(override=True)
 
+from langchain_groq import ChatGroq
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from src.schemas.curator import CuratedOptions
 from src.prompts.curator import curator_prompt, parser
-#from src.config.settings import NVIDIA_MODEL, NVIDIA_API_KEY
+from src.config.settings import NVIDIA_MODEL, NVIDIA_API_KEY
 
 search_tool = TavilySearchResults(max_results=3)
-#llm = ChatNVIDIA(model=NVIDIA_MODEL, temperature=0.2,max_tokens=500, api_key=NVIDIA_API_KEY)
+#llm = ChatNVIDIA(model=NVIDIA_MODEL, temperature=0.2,max_tokens=500, api_key=NVIDIA_API_KEY,timeout=150)
 
-llm = ChatGoogleGenerativeAI(
-    model="gemini-3.6-flash",
-    temperature=0.2, # Keep it low for deterministic extraction
+# llm = ChatGoogleGenerativeAI(
+#     model="gemini-3.6-flash",
+#     temperature=0.2, # Keep it low for deterministic extraction
+#     max_retries=2
+# )
+
+llm = ChatGroq(
+    model="openai/gpt-oss-120b",
+    temperature=0.2, 
     max_retries=2
 )
+
 
 # This guarantees Gemini will return a validated CuratedOptions object
 structured_llm = llm.with_structured_output(CuratedOptions)

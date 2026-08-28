@@ -3,12 +3,13 @@ from dotenv import load_dotenv
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
+from langchain_groq import ChatGroq
 
 from src.prompts.probe import PROBE_PROMPT
 from src.prompts.interview import INTERVIEW_QUESTIONS_PROMPT
 from src.schemas.perspective import InterviewQuestion, QuestionSet, Answer
 from src.utils.json_output import extract_json
-#from src.config.settings import NVIDIA_MODEL, NVIDIA_API_KEY
+from src.config.settings import NVIDIA_MODEL, NVIDIA_API_KEY
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 load_dotenv(override=True)
@@ -26,24 +27,52 @@ class InterviewerAgent:
     same four safe questions for every topic.
     """
 
-    def __init__(self, model_name: str = "gemini-3.6-flash", temperature: float = 0.8):
-        self.llm = ChatGoogleGenerativeAI(
-            model=model_name,
-            temperature=temperature,
-            api_key=os.getenv("GEMINI_API_KEY"),
-            max_retries=1,
-            timeout=60,
+    def __init__(self, model_name: str = "llama-3.3-70b-versatile", temperature: float = 0.8):
+        # self.llm = ChatGoogleGenerativeAI(
+        #     model=model_name,
+        #     temperature=temperature,
+        #     api_key=os.getenv("GEMINI_API_KEY"),
+        #     max_retries=1,
+        #     timeout=60,
+        # )
+
+        # self.llm = ChatNVIDIA(
+        #     model=NVIDIA_MODEL,
+        #     temperature=temperature,
+        #     api_key=NVIDIA_API_KEY,
+        #     max_retries=1,
+        #     timeout=150,
+        # )
+
+        self.llm = ChatGroq(
+            model="openai/gpt-oss-120b",
+            temperature=0.2, 
+            max_retries=2
         )
 
         self.prompt = ChatPromptTemplate.from_template(INTERVIEW_QUESTIONS_PROMPT)
         self.chain = self.prompt | self.llm | StrOutputParser()
 
-        self.probe_llm = ChatGoogleGenerativeAI(
-            model=model_name,
-            temperature=0.4,
-            api_key=os.getenv("GEMINI_API_KEY"),
-            max_retries=1,
-            timeout=60,
+        # self.probe_llm = ChatGoogleGenerativeAI(
+        #     model=model_name,
+        #     temperature=0.4,
+        #     api_key=os.getenv("GEMINI_API_KEY"),
+        #     max_retries=1,
+        #     timeout=60,
+        # )
+
+        # self.probe_llm = ChatNVIDIA(
+        #     model=NVIDIA_MODEL,
+        #     temperature=0.4,
+        #     api_key=NVIDIA_API_KEY,
+        #     max_retries=1,
+        #     timeout=60,
+        # )
+
+        self.probe_llm = ChatGroq(
+            model="openai/gpt-oss-120b",
+            temperature=0.2, 
+            max_retries=2
         )
 
         self.probe_chain = (

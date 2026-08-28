@@ -114,6 +114,7 @@ Evaluate each hook provided in the ALTERNATIVE HOOKS section:
 - If no alternative hooks were provided, return an empty list for `hook_evaluations`.
 
 IMPROVEMENT RULES
+- CRITICAL RULE: You are strictly forbidden from suggesting the addition of specific statistics, numerical metrics, benchmarks, or factual claims that are not explicitly present in the author's brief. If the post lacks concrete details, suggest stylistic changes (e.g., phrasing, flow, or structure), but NEVER ask the writer to add unprovided data.
 - Only report improvements that would meaningfully change the post's impact.
 - Do not manufacture issues to fill a quota. If the post is strong, return an empty improvement list. An empty list is a valid and useful answer.
 - Do not report a problem the post does not have. Check the text before claiming something is missing.

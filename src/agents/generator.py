@@ -5,6 +5,7 @@ from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 
 from src.prompts.generator import GENERATOR_PROMPT
 #from src.config.settings import GEMINI_MODEL, GEMINI_API_KEY
@@ -28,14 +29,13 @@ def format_external_references(references: List[Dict[str, str]]) -> str:
 class GeneratorAgent:
     def __init__(
         self,
-        model_name: str = "gemini-3.6-flash",
+        model_name: str = "openai/gpt-oss-120b",
         temperature: float = 0.7,
     ):
-        # Use ChatGoogleGenerativeAI with strict timeout and retries
-        self.llm = ChatGoogleGenerativeAI(
+        # Use ChatGroq with strict timeout and retries
+        self.llm = ChatGroq(
             model=model_name,
             temperature=temperature,
-            api_key=os.getenv("GEMINI_API_KEY"),
             max_retries=1,
             timeout=60
         )

@@ -7,6 +7,6 @@ class RouterDecision(BaseModel):
     reasoning: str = Field(
         description="A 1-sentence explanation identifying the most critical flaw in the draft."
     )
-    action: Literal["fix_facts", "fix_hook", "fix_flow", "finalize"] = Field(
-        description="Route to 'fix_facts' if faithfulness failed. Route to 'fix_hook' for a weak opening. Route to 'fix_flow' for structural/tone issues. 'finalize' if ready."
+    action: Literal["fix_facts", "fix_hook", "fix_flow","researcher", "finalize"] = Field(
+        description="Route to 'fix_facts' if faithfulness failed. Route to 'fix_hook' for a weak opening. Route to 'fix_flow' for structural/tone issues. Route to 'researcher' if missing external data/metrics. 'finalize' if ready."
     )

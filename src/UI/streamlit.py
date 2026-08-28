@@ -118,6 +118,7 @@ def initial_state(topic: str, brief, external_references: list = None) -> dict:
         "topic": topic,
         "brief": brief.model_dump(),
         "external_references": external_references or [],
+        "proposed_references": [],
         "post": "",
         "tone": st.session_state.get("tone", "Direct, punchy, and technical (like a senior engineer)"),
         "evaluation": None,
@@ -151,9 +152,7 @@ def build_brief(answers: list[Answer], was_probed: bool = False) -> None:
     st.rerun()
 
 
-# ==============================================================================
-# UI MAIN LOOP
-# ==============================================================================
+
 
 st.title("🚀 LinkedInForge")
 
@@ -399,28 +398,96 @@ elif st.session_state.phase == "brief":
 
 # ---------------------------------------------------------------- REVIEW (HITL)
 elif st.session_state.phase == "review":
-    st.caption("Step 4 — Human Review")
-    st.subheader("Approve or Revise")
-    
     current_state = workflow_app.get_state(config)
-    
-    # Check if the graph successfully paused at the breakpoint
-    if current_state.next and current_state.next[0] == "finalize":
+    state_values = current_state.values
+
+    # --- HITL BREAKPOINT 1: RESEARCH REVIEW ---
+    if current_state.next and current_state.next[0] == "review_research":
+        st.warning("⏸️ Research Phase: The AI retrieved external references for verification.")
+        st.subheader("Step 3.5 — Review Retrieved Facts")
+        
+        proposed_refs = state_values.get("proposed_references", [])
+        
+        if not proposed_refs:
+            st.info("No external references found matching the criteria.")
+            if st.button("Continue to Generator"):
+                for _ in workflow_app.stream(None, config=config):
+                    pass
+                st.rerun()
+        else:
+            with st.form("hitl_research_form"):
+                st.write("Select the sources and data points to include in the ground truth:")
+                
+                selected_indices = []
+                for idx, ref in enumerate(proposed_refs):
+                    checked = st.checkbox(
+                        f"**{ref.get('title', 'Reference')}**\n\n{ref.get('snippet', '')}\n\n*Source: {ref.get('url', '')}*",
+                        value=True,
+                        key=f"research_ref_{idx}"
+                    )
+                    if checked:
+                        selected_indices.append(idx)
+                
+                col1, col2 = st.columns(2)
+                approve_research = col1.form_submit_button("✅ Approve Selected & Inject", type="primary")
+                reject_research = col2.form_submit_button("❌ Discard All Research")
+                
+                if approve_research:
+                    with st.spinner("Injecting approved references and generating draft..."):
+                        existing_refs = state_values.get("external_references", []) or []
+                        approved_refs = [proposed_refs[i] for i in selected_indices]
+                        
+                        workflow_app.update_state(
+                            config,
+                            {
+                                "external_references": existing_refs + approved_refs,
+                                "proposed_references": [],
+                                "evaluation": {"feedback": "Integrate the newly provided external references into the draft."}
+                            },
+                            as_node="review_research"
+                        )
+                        for event in workflow_app.stream(None, config=config):
+                            st.toast(f"Agent finished: {list(event.keys())[0]}")
+                        st.rerun()
+                        
+                elif reject_research:
+                    with st.spinner("Skipping research..."):
+                        workflow_app.update_state(
+                            config,
+                            {"proposed_references": []},
+                            as_node="review_research"
+                        )
+                        for event in workflow_app.stream(None, config=config):
+                            pass
+                        st.rerun()
+
+    # --- HITL BREAKPOINT 2: FINAL POST REVIEW ---
+    elif current_state.next and current_state.next[0] == "finalize":
+        st.caption("Step 4 — Human Review")
+        st.subheader("Approve or Revise")
+        
         st.warning("⏸️ Autonomous routing paused. The draft is ready for your review.")
         
-        state_values = current_state.values
         draft = state_values.get("best_post", state_values.get("post", ""))
+        iteration = state_values.get("iteration", 0)
         
         verdict = state_values.get("verdict")
         if verdict:
-            st.caption(f"Craft Score: {verdict.craft_score}/10 | Faithfulness: {verdict.faithfulness}/10")
+            st.caption(f"Draft #{iteration} | Craft Score: {verdict.craft_score}/10 | Faithfulness: {verdict.faithfulness}/10")
 
         # Text area allows manual tweaks before finalizing
-        editable_draft = st.text_area("Best Draft So Far (Edit directly, or request AI revisions below):", 
-                                      value=draft, height=350)
+        editable_draft = st.text_area(
+            "Best Draft So Far (Edit directly, or request AI revisions below):", 
+            value=draft, 
+            height=350,
+            key=f"draft_review_{iteration}"
+        )
         
         with st.form("hitl_form"):
-            feedback = st.text_input("Request AI revisions (e.g., 'Make it punchier', 'Fix the ending'):")
+            feedback = st.text_input(
+                "Request AI revisions (e.g., 'Make it punchier', 'Fix the ending'):",
+                key=f"feedback_{iteration}"
+            )
             
             col1, col2 = st.columns(2)
             approve_btn = col1.form_submit_button("✅ Approve & Publish", type="primary")
@@ -430,7 +497,7 @@ elif st.session_state.phase == "review":
                 with st.spinner("Finalizing post..."):
                     # Inject manual edits into the state before finalizing
                     if editable_draft != draft:
-                        workflow_app.update_state(config, {"post": editable_draft})
+                        workflow_app.update_state(config, {"post": editable_draft, "best_post": editable_draft})
                     
                     final_result = workflow_app.invoke(None, config=config)
                     
@@ -444,13 +511,30 @@ elif st.session_state.phase == "review":
                 if not feedback:
                     st.error("Please provide revision instructions if sending back to the repair agents.")
                 else:
-                    with st.spinner(f"Routing back for revisions..."):
-                        # Inject human feedback into the state
+                    with st.spinner("Routing back for revisions..."):
+                        
+                        # 1. Fetch the active brief from the current state
+                        current_brief = state_values.get("brief", {})
+                        
+                        # 2. Ensure 'details' is a list, then append the manual feedback
+                        if "details" not in current_brief:
+                            current_brief["details"] = []
+                        
+                        # Labeling it "HUMAN VERIFIED" ensures the LLM knows it's an absolute fact
+                        current_brief["details"].append(f"HUMAN VERIFIED FACT: {feedback}")
+
+                        # 3. Inject human feedback AND the updated brief into the state
                         workflow_app.update_state(
                             config,
-                            {"evaluation": {"feedback": f"HUMAN OVERRIDE: {feedback}"}},
+                            {
+                                "brief": current_brief, # The injected facts are now ground truth
+                                "evaluation": {"feedback": f"HUMAN OVERRIDE: {feedback}"},
+                                "verdict": None,
+                                "decision": None
+                            },
                             as_node="evaluate"
                         )
+                        
                         # Resume graph execution
                         for event in workflow_app.stream(None, config=config):
                             node_name = list(event.keys())[0]

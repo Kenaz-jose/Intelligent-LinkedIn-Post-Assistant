@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain_core.output_parsers import StrOutputParser
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 
 from src.prompts.repair import STYLIST_TEMPLATE
 #from src.config.settings import NVIDIA_API_KEY,NVIDIA_MODEL
@@ -11,11 +12,10 @@ from src.prompts.repair import STYLIST_TEMPLATE
 load_dotenv(override=True)
 
 class StylistAgent:
-    def __init__(self, model_name: str = "gemini-3.6-flash", temperature: float = 0.2):
-        self.llm = ChatGoogleGenerativeAI(
+    def __init__(self, model_name: str = "openai/gpt-oss-120b", temperature: float = 0.2):
+        self.llm = ChatGroq(
             model=model_name,
             temperature=temperature,
-            api_key=os.getenv("GEMINI_API_KEY"),
             max_retries=1,
             timeout=30,
         )

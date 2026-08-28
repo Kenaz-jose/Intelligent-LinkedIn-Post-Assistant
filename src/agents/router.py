@@ -1,38 +1,37 @@
 import os
 from dotenv import load_dotenv
-from langchain_nvidia_ai_endpoints import ChatNVIDIA
-from langchain_core.output_parsers import PydanticOutputParser
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 
 from src.schemas.routing import RouterDecision
 from src.prompts.routing import ROUTER_PROMPT_TEMPLATE
-#from src.config.settings import NVIDIA_MODEL, NVIDIA_API_KEY
 
 load_dotenv(override=True)
 
 class RouterAgent:
     """
     Managing Editor Agent that dynamically routes a draft to specialized 
-    micro-agents based on the primary point of failure.
+    micro-agents or the research pipeline based on the primary point of failure.
     """
 
     def __init__(
         self,
-        model_name: str = "gemini-3.6-flash",
+        model_name: str = "openai/gpt-oss-120b",
         temperature: float = 0.1,
     ):
-        self.parser = PydanticOutputParser(pydantic_object=RouterDecision)
-        
-        self.llm = ChatGoogleGenerativeAI(
+        self.llm = ChatGroq(
             model=model_name,
             temperature=temperature,
-            api_key=os.getenv("GEMINI_API_KEY"),
-            max_retries=1,
+            max_retries=2,
             timeout=30,
         )
 
-        # Build the chain using the imported template
-        self.chain = ROUTER_PROMPT_TEMPLATE | self.llm | self.parser
+        # Use json_mode structured output for reliable schema conformity
+        self.structured_llm = self.llm.with_structured_output(
+            RouterDecision,
+            method="json_mode"
+        )
+
+        self.chain = ROUTER_PROMPT_TEMPLATE | self.structured_llm
 
     def decide(
         self,
@@ -47,11 +46,11 @@ class RouterAgent:
                 "post": post,
                 "critique": critique,
                 "faithfulness_pass": str(faithfulness_pass),
-                "format_instructions": self.parser.get_format_instructions(),
+                "format_instructions": "Return ONLY a valid JSON object matching the schema with 'action' and 'reasoning' keys.",
             })
         except Exception as exc:
-            print(f"[RouterAgent] Parsing error: {exc}. Defaulting to finalize.")
+            print(f"[RouterAgent] Routing execution error: {exc}. Defaulting to finalize.")
             return RouterDecision(
-                reasoning="Router fallback due to parsing error.",
+                reasoning="Router fallback due to execution/parsing error.",
                 action="finalize"
             )
