@@ -4,7 +4,7 @@ from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain_core.output_parsers import StrOutputParser
 from src.prompts.repair import HOOK_COPYWRITER_TEMPLATE
 #from src.config.settings import NVIDIA_API_KEY,NVIDIA_MODEL
-from langchain_google_genai import ChatGoogleGenerativeAI
+#from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 
 load_dotenv(override=True)

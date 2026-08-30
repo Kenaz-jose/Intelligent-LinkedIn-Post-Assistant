@@ -46,6 +46,13 @@ Additionally, adhere to these stylistic rules:
 - Use active voice whenever possible.
 - Do not cram multiple technical details into a single list-like paragraph; let the narrative breathe.
 
+PAST SUCCESSFUL POSTS (STYLE & FORMATTING REFERENCES)
+Below are examples of your past high-performing posts. Analyze their sentence length, paragraph spacing, vocabulary, and rhythm. 
+MIMIC THIS EXACT WRITING STYLE. However, DO NOT copy the facts, topics, or anecdotes from these examples into the new post. Use them strictly as a stylistic template.
+<past_examples>
+{past_examples}
+</past_examples>
+
 STRUCTURE
 Follow this structure exactly:
 1. A compelling opening hook that introduces the topic using a direct statement of fact or a specific observation (do not use dramatic rhetorical questions).

@@ -7,6 +7,7 @@ interview that asks something it has asked before.
 """
 from langchain_nvidia_ai_endpoints import NVIDIAEmbeddings
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
@@ -19,8 +20,11 @@ from src.schemas.perspective import UserMemory
 # How many items of each kind to load. The database keeps everything; this
 # caps what reaches the prompt. Replaces the list slicing in absorb().
 RECALL_LIMIT = 20
-embedder = GoogleGenerativeAIEmbeddings(model="gemini-embedding-001")
-
+embedder = HuggingFaceEmbeddings(
+    model_name="BAAI/bge-base-en-v1.5",
+    model_kwargs={"device": "cpu"},
+    encode_kwargs={"normalize_embeddings": True},
+)
 
 def _kind_contents(session, user_id, kind: str, search_vector: list[float], limit: int) -> list[str]:
     """

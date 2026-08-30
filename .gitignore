@@ -52,3 +52,10 @@ htmlcov/
 Thumbs.db
 desktop.ini
 
+# Langraph
+.langgraph_api
+.langgraph.json
+
+# Database
+.data
+.reset_db.py

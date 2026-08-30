@@ -77,11 +77,15 @@ def generate_hooks_node(state: LinkedInState) -> dict:
 
 def generate_node(state: LinkedInState):
     brief = brief_block(state)
+    print("\n[DEBUG] WHAT THE GENERATOR SEES:\n", brief)
+
     tone = state.get("tone", "Direct, punchy, and technical (like a senior engineer)")
 
     post = generator_agent.invoke({
+        "topic": state.get("topic", ""), 
         "brief": brief,
-        "tone": tone
+        "tone": tone,
+        "external_references": state.get("external_references", [])
     })
 
     print("\n===== GENERATED POST =====")
@@ -217,11 +221,11 @@ def dynamic_switchboard(state: LinkedInState) -> str:
     iteration = state.get("iteration", 0)
     decision = state.get("decision")
     verdict = state.get("verdict")
-    evaluation = state.get("evaluation")
     
     craft = verdict.craft_score if verdict else 0.0
     previous_craft = state.get("previous_craft", 0.0)
 
+    # 1. Deterministic Hard Stops (Success or Limits)
     if decision and decision.outcome == "ready":
         print("\n[SWITCHBOARD] Policy engine approved draft. Stopping.")
         return "finalize"
@@ -230,24 +234,29 @@ def dynamic_switchboard(state: LinkedInState) -> str:
         print(f"\n[SWITCHBOARD] Early Stopping: Score degraded from {previous_craft} to {craft}. Reverting to best draft.")
         return "finalize"
 
-    # 1. Hard Limits
     if iteration >= MAX_ITERATIONS:
         print(f"\n[SWITCHBOARD] Max iterations hit ({MAX_ITERATIONS}). Forcing stop.")
         return "finalize"
 
-    # 2. Agentic Routing
-    critique_str = _get_critique_string(evaluation)
-    passes_faith = verdict.passes_faithfulness if verdict else False
+    # 2. Strict Logic Routing (Replaces Agentic LLM Router)
+    if verdict:
+        # FAITHFULNESS IS THE HIGHEST PRIORITY
+        if not verdict.passes_faithfulness:
+            print("\n[SWITCHBOARD] Decision: FIX_FACTS | Reason: Evaluator flagged unfaithful claims.")
+            return "fix_facts"
+            
+        # IF FAITHFUL, WE UPGRADE THE CRAFT
+        if not verdict.meets_craft_bar:
+            print("\n[SWITCHBOARD] Decision: REFINE | Reason: Craft score below threshold.")
+            return "fix_flow"  # <-- Change this string if your graph node is named "refine_craft" or "stylist"
+    
+    elif verdict is None:
+        print("\n[SWITCHBOARD] Human override detected. Routing to repair agents.")
+        return "fix_flow"
 
-    route_decision = router_agent.decide(
-        brief=brief_block(state),
-        post=state["post"],
-        critique=critique_str,
-        faithfulness_pass=passes_faith,
-    )
-
-    print(f"\n[SWITCHBOARD] Decision: {route_decision.action.upper()} | Reason: {route_decision.reasoning}")
-    return route_decision.action
+    # 3. Safe Fallback
+    print("\n[SWITCHBOARD] Fallback triggered. Stopping.")
+    return "finalize"
 
 def finalize_node(state: LinkedInState):
     best_post = state.get("best_post") or state["post"]

@@ -13,6 +13,7 @@ from src.services.perspective_service import (
 )
 from src.store.run_store import save_brief, save_run
 from src.services.search_service import fetch_live_context
+from src.store.vector_store import vector_store
 
 USER_ID = "demo-user"
 
@@ -21,18 +22,14 @@ CRAFT_FIELDS = [
     "professionalism", "structure",
 ]
 
-st.set_page_config(page_title="Spotlight", page_icon="💫", layout="wide")
+st.set_page_config(page_title="LinkedIn Forge", page_icon="💫", layout="wide")
 
-# ---------------------------------------------------------
-# SESSION STATE & LANGGRAPH CONFIG
-# ---------------------------------------------------------
 if "thread_id" not in st.session_state:
     st.session_state.thread_id = str(uuid.uuid4())
 
 config = {"configurable": {"thread_id": st.session_state.thread_id}}
 
 st.session_state.setdefault("phase", "topic")
-
 
 def reset():
     for key in ("phase", "topic", "tone", "questions", "answers", "probe_questions",
@@ -494,14 +491,29 @@ elif st.session_state.phase == "review":
             revise_btn = col2.form_submit_button("🔄 Route to Repair Agents")
             
             if approve_btn:
-                with st.spinner("Finalizing post..."):
+                with st.spinner("Finalizing and saving to memory..."):
                     # Inject manual edits into the state before finalizing
                     if editable_draft != draft:
                         workflow_app.update_state(config, {"post": editable_draft, "best_post": editable_draft})
                     
                     final_result = workflow_app.invoke(None, config=config)
-                    
                     st.session_state.result = final_result
+                    
+
+                    final_verdict = final_result.get("verdict")
+                    final_post = final_result.get("best_post") or final_result.get("post", "")
+                    
+                    if final_verdict and final_verdict.craft_score >= 8.0:
+                        try:
+                            vector_store.save_golden_post(
+                                topic=st.session_state.topic,
+                                final_post=final_post,
+                                craft_score=final_verdict.craft_score
+                            )
+                            st.toast("🧠 High-scoring post saved to your semantic memory!")
+                        except Exception as e:
+                            st.error(f"Memory save failed: {e}")
+                            
                     save_run(st.session_state.get("brief_id"), final_result)
                     
                     st.session_state.phase = "result"
@@ -514,16 +526,18 @@ elif st.session_state.phase == "review":
                     with st.spinner("Routing back for revisions..."):
                         
                         # 1. Fetch the active brief from the current state
-                        current_brief = state_values.get("brief", {})
+                        # Use dict() to ensure we aren't modifying the frozen state object directly
+                        current_brief = dict(state_values.get("brief", {}))
                         
-                        # 2. Ensure 'details' is a list, then append the manual feedback
-                        if "details" not in current_brief:
+                        # 2. Safely ensure 'details' is an active list
+                        if not current_brief.get("details"):
                             current_brief["details"] = []
                         
+                        # 3. Append the manual feedback as a verified fact
                         # Labeling it "HUMAN VERIFIED" ensures the LLM knows it's an absolute fact
                         current_brief["details"].append(f"HUMAN VERIFIED FACT: {feedback}")
 
-                        # 3. Inject human feedback AND the updated brief into the state
+                        # 4. Inject human feedback AND the updated brief into the state
                         workflow_app.update_state(
                             config,
                             {
@@ -551,7 +565,14 @@ elif st.session_state.phase == "review":
 # ---------------------------------------------------------------- RESULT
 elif st.session_state.phase == "result":
     result = st.session_state.result
-    brief = st.session_state.brief
+
+    final_brief_dict = result.get("brief", {})
+    if isinstance(final_brief_dict, dict):
+        from src.schemas.perspective import PerspectiveBrief
+        brief = PerspectiveBrief(**final_brief_dict)
+    else:
+        brief = st.session_state.brief
+
     evaluation = result.get("evaluation")
     verdict = result.get("verdict")
     decision = result.get("decision")

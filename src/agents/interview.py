@@ -10,7 +10,7 @@ from src.prompts.interview import INTERVIEW_QUESTIONS_PROMPT
 from src.schemas.perspective import InterviewQuestion, QuestionSet, Answer
 from src.utils.json_output import extract_json
 from src.config.settings import NVIDIA_MODEL, NVIDIA_API_KEY
-from langchain_google_genai import ChatGoogleGenerativeAI
+#from langchain_google_genai import ChatGoogleGenerativeAI
 
 load_dotenv(override=True)
 

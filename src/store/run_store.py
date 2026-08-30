@@ -79,7 +79,8 @@ def save_run(brief_id: uuid.UUID | None, result: dict) -> None:
                 best_iteration=result.get("best_iteration", 0),
                 repairs_used=result.get("repairs_used", 0),
                 stop_reason=decision.reason if decision else "",
-                evaluation=evaluation.model_dump() if evaluation else None,
+                # --- FIX: Safely check if evaluation is a Pydantic model or a raw dict ---
+                evaluation=evaluation.model_dump() if hasattr(evaluation, "model_dump") else (evaluation if evaluation else None),
             ))
             session.commit()
 
