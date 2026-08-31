@@ -6,10 +6,26 @@ from src.agents.workflow import app, Decision
 def safe(obj):
     if not obj:
         return {}
+    
+    # If it's already a dictionary
+    if isinstance(obj, dict):
+        return json.loads(json.dumps(obj, default=str))
+        
+    # If it's a Pydantic model
     if hasattr(obj, "model_dump"):
         return json.loads(json.dumps(obj.model_dump(), default=str))
-    return json.loads(json.dumps(obj, default=str))
-
+        
+    # If it's a NamedTuple
+    if hasattr(obj, "_asdict"):
+        return json.loads(json.dumps(obj._asdict(), default=str))
+        
+    # If it's a Python dataclass or standard object
+    if hasattr(obj, "__dict__"):
+        return json.loads(json.dumps(obj.__dict__, default=str))
+        
+    # Ultimate fallback: wrap it in a dictionary so FastAPI doesn't crash
+    return {"raw_value": str(obj)}
+    
 def format_state_response(thread_id: str, state_snapshot) -> dict:
     values = state_snapshot.values if state_snapshot else {}
     next_nodes = list(state_snapshot.next) if state_snapshot and state_snapshot.next else []

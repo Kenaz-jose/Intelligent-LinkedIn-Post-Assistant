@@ -1,12 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from src.api.routes import router  # Note: your snippet said 'route.py' but imported from 'routes'
+from src.api.routes import router
 
 app = FastAPI(title="LinkedInForge API")
 
 app.add_middleware(
     CORSMiddleware,
-    # Update this to your deployed frontend domain once you move off localhost
     allow_origins=["http://localhost:3000"], 
     allow_credentials=True,
     allow_methods=["*"],

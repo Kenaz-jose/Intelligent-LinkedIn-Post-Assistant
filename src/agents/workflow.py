@@ -21,6 +21,7 @@ from src.agents.stylist import StylistAgent
 from src.agents.researcher import ResearcherAgent
 
 load_dotenv(override=True)
+
 tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
 class ReferenceItem(TypedDict):
@@ -233,7 +234,7 @@ def fix_flow_node(state: LinkedInState):
         "previous_craft": state["current_craft"],
         "reasoning_steps": new_reasoning
     }
-    
+
 def research_node(state: LinkedInState):
     print("\n[RESEARCH] Routing to ResearcherAgent for web data...")
     critique = _get_critique_string(state.get("evaluation"))
@@ -299,7 +300,7 @@ def finalize_node(state: LinkedInState):
     }
 
 graph = StateGraph(LinkedInState)
-memory = MemorySaver()
+memory = MemorySaver()  # In-memory checkpointing for development; replace with AsyncPostgresSaver for production
 
 graph.add_node("generate_hooks", generate_hooks_node)
 graph.add_node("generate", generate_node)
