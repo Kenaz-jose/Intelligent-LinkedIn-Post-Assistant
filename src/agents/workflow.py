@@ -41,7 +41,8 @@ class LinkedInState(TypedDict):
     verdict: Optional[object]
     decision: Optional[object]
     router_reasoning: Optional[str]
-
+    
+    reasoning_steps: List[str]
     iteration: int
     repairs_used: int
 
@@ -94,6 +95,9 @@ def generate_node(state: LinkedInState):
 
     current_iter = state.get("iteration", 0)
 
+    # Append to reasoning steps
+    new_reasoning = state.get("reasoning_steps", []) + ["Drafting initial post based on brief and tone."]
+
     return {
         "post": post,
         "iteration": current_iter + 1 if current_iter > 0 else 0,
@@ -104,6 +108,7 @@ def generate_node(state: LinkedInState):
         "best_verdict": state.get("best_verdict"),
         "best_evaluation": state.get("best_evaluation"),
         "best_iteration": state.get("best_iteration", 0),
+        "reasoning_steps": new_reasoning # Returned to update LangGraph state
     }
 
 def evaluate_node(state: LinkedInState):
@@ -140,6 +145,9 @@ def evaluate_node(state: LinkedInState):
         repairs_used=state.get("repairs_used", 0),
         previous_craft=state.get("previous_craft", -1.0),
     )
+    
+    # Verdict is now defined, so we can safely log its properties
+    new_reasoning = state.get("reasoning_steps", []) + [f"Evaluated draft: Craft score {verdict.craft_score:.1f}, Faithfulness {verdict.passes_faithfulness}."]
 
     update = {
         "evaluation": evaluation,
@@ -147,6 +155,7 @@ def evaluate_node(state: LinkedInState):
         "decision": decision,
         "current_craft": verdict.craft_score,
         "alternative_hooks": valid_hooks,
+        "reasoning_steps": new_reasoning # Returned to update LangGraph state
     }
 
     if decision.repair_mode:
@@ -169,9 +178,7 @@ def evaluate_node(state: LinkedInState):
     print("\n" + "="*50)
     print("📋 EVALUATION NODE OUTPUT:")
     print("="*50)
-    pprint(update, depth=3) 
-    print("="*50 + "\n")
-
+    
     return update
 
 def _get_critique_string(evaluation) -> str:
@@ -189,20 +196,44 @@ def fix_facts_node(state: LinkedInState):
     print("\n[REPAIR] Routing to FactCheckerAgent...")
     critique = _get_critique_string(state.get("evaluation"))
     repaired_post = fact_checker_agent.invoke(state["post"], brief_block(state), critique)
-    return {"post": repaired_post, "iteration": state["iteration"] + 1, "previous_craft": state["current_craft"]}
+    
+    new_reasoning = state.get("reasoning_steps", []) + ["FactCheckerAgent active: Resolving unverified claims."]
+    
+    return {
+        "post": repaired_post, 
+        "iteration": state["iteration"] + 1, 
+        "previous_craft": state["current_craft"],
+        "reasoning_steps": new_reasoning
+    }
 
 def fix_hook_node(state: LinkedInState):
     print("\n[REPAIR] Routing to HookCopywriterAgent...")
     critique = _get_critique_string(state.get("evaluation"))
     repaired_post = hook_copywriter_agent.invoke(state["post"], critique)
-    return {"post": repaired_post, "iteration": state["iteration"] + 1, "previous_craft": state["current_craft"]}
+    
+    new_reasoning = state.get("reasoning_steps", []) + ["HookCopywriterAgent active: Refining the opening lines."]
+    
+    return {
+        "post": repaired_post, 
+        "iteration": state["iteration"] + 1, 
+        "previous_craft": state["current_craft"],
+        "reasoning_steps": new_reasoning
+    }
 
 def fix_flow_node(state: LinkedInState):
     print("\n[REPAIR] Routing to StylistAgent...")
     critique = _get_critique_string(state.get("evaluation"))
     repaired_post = stylist_agent.invoke(state["post"], critique)
-    return {"post": repaired_post, "iteration": state["iteration"] + 1, "previous_craft": state["current_craft"]}
-
+    
+    new_reasoning = state.get("reasoning_steps", []) + ["StylistAgent active: Refining tone, structure, and readability."]
+    
+    return {
+        "post": repaired_post, 
+        "iteration": state["iteration"] + 1, 
+        "previous_craft": state["current_craft"],
+        "reasoning_steps": new_reasoning
+    }
+    
 def research_node(state: LinkedInState):
     print("\n[RESEARCH] Routing to ResearcherAgent for web data...")
     critique = _get_critique_string(state.get("evaluation"))
