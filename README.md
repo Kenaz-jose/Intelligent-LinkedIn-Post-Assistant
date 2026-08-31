@@ -204,10 +204,10 @@ LinkedInForge/
 ├── src/
 │   │
 │   ├── agents/                # Specialized LangGraph agents
-│   │   ├── generator/
-│   │   ├── evaluator/
-│   │   ├── fact_checker/
-│   │   ├── researcher/
+│   │   ├── generator.py
+│   │   ├── evaluator.py
+│   │   ├── fact_checker.py
+│   │   ├── researcher.py
 │   │   └── revisers/
 │   │
 │   ├── api/                   # FastAPI backend
