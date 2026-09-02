@@ -57,6 +57,7 @@ desktop.ini
 .langgraph.json
 
 # Database
-.data
+.data/chroma_db
+.data/user_memory.json
 .reset_db.py
 .chroma_db

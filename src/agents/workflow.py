@@ -1,6 +1,7 @@
 import os
+import operator
 from pprint import pprint
-from typing import TypedDict, Optional, List, Dict
+from typing import TypedDict, Optional, List, Dict, Annotated
 
 from langgraph.graph import StateGraph, END, START
 from langgraph.checkpoint.memory import MemorySaver
@@ -37,6 +38,10 @@ class LinkedInState(TypedDict):
     alternative_hooks: List[Dict[str, str]]
     external_references: List[ReferenceItem]
     proposed_references: List[ReferenceItem]
+
+    human_feedback: Optional[str]
+    human_feedback_applied: bool
+    human_feedback_history: Annotated[List[str], operator.add]
 
     evaluation: Optional[object]
     verdict: Optional[object]
@@ -127,7 +132,7 @@ def evaluate_node(state: LinkedInState):
     except Exception as exc:
         logger.error(f"Evaluation failed: {exc}")
         return {
-            "decision": Decision(outcome="ready", reason=f"Evaluation failed. Returning best draft so far.")
+            "decision": Decision(outcome="refine", reason=f"Evaluation failed. Forcing repair. Error: {exc}")
         }
 
     # Filter unfaithful alternative hooks
@@ -156,7 +161,7 @@ def evaluate_node(state: LinkedInState):
         "decision": decision,
         "current_craft": verdict.craft_score,
         "alternative_hooks": valid_hooks,
-        "reasoning_steps": new_reasoning # Returned to update LangGraph state
+        "reasoning_steps": new_reasoning 
     }
 
     if decision.repair_mode:
@@ -223,16 +228,52 @@ def fix_hook_node(state: LinkedInState):
 
 def fix_flow_node(state: LinkedInState):
     print("\n[REPAIR] Routing to StylistAgent...")
-    critique = _get_critique_string(state.get("evaluation"))
-    repaired_post = stylist_agent.invoke(state["post"], critique)
-    
-    new_reasoning = state.get("reasoning_steps", []) + ["StylistAgent active: Refining tone, structure, and readability."]
-    
+
+    evaluation = state.get("evaluation")
+    critique = _get_critique_string(evaluation)
+
+    human_feedback = state.get("human_feedback")
+
+    if human_feedback:
+        critique += (
+            "\n\nHUMAN REVISION REQUIREMENT:\n"
+            f"{human_feedback}\n"
+            "\nYou MUST follow this requirement above all other critiques."
+        )
+
+        print("\n[HITL] Human feedback:")
+        print(human_feedback)
+
+    repaired_post = stylist_agent.invoke(
+        state["post"],
+        critique
+    )
+
+    new_reasoning = (
+        state.get("reasoning_steps", [])
+        + [
+            "StylistAgent active: Refining draft based on evaluator "
+            "feedback and human requirements."
+        ]
+    )
+
     return {
-        "post": repaired_post, 
-        "iteration": state["iteration"] + 1, 
-        "previous_craft": state["current_craft"],
-        "reasoning_steps": new_reasoning
+        "post": repaired_post,
+        "iteration": state.get("iteration", 0) + 1,
+
+        "human_feedback_applied": (
+            True
+            if human_feedback
+            else state.get("human_feedback_applied", False)
+        ),
+
+        "human_feedback": None,
+
+        "human_feedback_history": (
+            [human_feedback] if human_feedback else []
+        ),
+
+        "reasoning_steps": new_reasoning,
     }
 
 def research_node(state: LinkedInState):
@@ -257,10 +298,19 @@ def dynamic_switchboard(state: LinkedInState) -> str:
     craft = verdict.craft_score if verdict else 0.0
     previous_craft = state.get("previous_craft", 0.0)
 
-    # 1. Deterministic Hard Stops (Success or Limits)
+    human_feedback = state.get("human_feedback")
+
+    if human_feedback:
+        print("\n[SWITCHBOARD] Human feedback detected. Routing to StylistAgent for refinement.")
+        return "fix_flow"
+
     if decision and decision.outcome == "ready":
         print("\n[SWITCHBOARD] Policy engine approved draft. Stopping.")
         return "finalize"
+
+    if decision and decision.outcome == "refine":
+        print("\n[SWITCHBOARD] Decision: REFINE | Reason: Evaluation failed or human override.")
+        return "fix_flow"
 
     if iteration > 1 and craft < previous_craft:
         print(f"\n[SWITCHBOARD] Early Stopping: Score degraded from {previous_craft} to {craft}. Reverting to best draft.")
@@ -270,37 +320,32 @@ def dynamic_switchboard(state: LinkedInState) -> str:
         print(f"\n[SWITCHBOARD] Max iterations hit ({MAX_ITERATIONS}). Forcing stop.")
         return "finalize"
 
-    # 2. Strict Logic Routing (Replaces Agentic LLM Router)
     if verdict:
-        # FAITHFULNESS IS THE HIGHEST PRIORITY
+
         if not verdict.passes_faithfulness:
             print("\n[SWITCHBOARD] Decision: FIX_FACTS | Reason: Evaluator flagged unfaithful claims.")
             return "fix_facts"
             
-        # IF FAITHFUL, WE UPGRADE THE CRAFT
         if not verdict.meets_craft_bar:
             print("\n[SWITCHBOARD] Decision: REFINE | Reason: Craft score below threshold.")
-            return "fix_flow"  # <-- Change this string if your graph node is named "refine_craft" or "stylist"
-    
-    elif verdict is None:
-        print("\n[SWITCHBOARD] Human override detected. Routing to repair agents.")
-        return "fix_flow"
-
-    # 3. Safe Fallback
+            return "fix_flow"  
     print("\n[SWITCHBOARD] Fallback triggered. Stopping.")
     return "finalize"
 
 def finalize_node(state: LinkedInState):
-    best_post = state.get("best_post") or state["post"]
-    print("\n" + "=" * 60 + "\nFINAL POST\n" + "=" * 60 + f"\n{best_post}\n" + "=" * 60)
+    if state.get("human_feedback_applied"):
+        final_post = state["post"]
+    else:
+        final_post = state.get("best_post") or state["post"]
+
     return {
-        "post": best_post,
-        "evaluation": state.get("best_evaluation") or state.get("evaluation"),
-        "verdict": state.get("best_verdict") or state.get("verdict"),
+        "post": final_post,
+        "evaluation": state.get("evaluation"),
+        "verdict": state.get("verdict"),
     }
 
 graph = StateGraph(LinkedInState)
-memory = MemorySaver()  # In-memory checkpointing for development; replace with AsyncPostgresSaver for production
+memory = MemorySaver()  
 
 graph.add_node("generate_hooks", generate_hooks_node)
 graph.add_node("generate", generate_node)

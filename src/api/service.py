@@ -1,7 +1,7 @@
 import json
 from typing import AsyncGenerator, Optional
 from src.agents.workflow import app
-from src.agents.workflow import app, Decision
+from src.agents.workflow import Decision
 
 def safe(obj):
     if not obj:
@@ -40,10 +40,14 @@ def format_state_response(thread_id: str, state_snapshot) -> dict:
 
     evaluation = values.get("best_evaluation") or values.get("evaluation")
     verdict = values.get("best_verdict") or values.get("verdict")
-
+    
+    if values.get("human_feedback_applied"):
+        response_post = values.get("post", "")
+    else:
+        response_post = values.get("best_post") or values.get("post", "")   
     return {
         "thread_id": thread_id,
-        "post": str(values.get("best_post") or values.get("post", "")),
+        "post": str(response_post),
         "evaluation": safe(evaluation),
         "verdict": safe(verdict),
         "iteration": int(values.get("iteration", 0)),
@@ -94,25 +98,28 @@ async def resume_pipeline(thread_id: str, feedback: Optional[str] = None, approv
     if not state or not state.next:
         return format_state_response(thread_id, state)
 
+    # 1. Handle Human Feedback on the Draft
     if feedback:
-        # 1. Grab the existing Evaluation object from memory so we don't break getattr()
-        current_eval = state.values.get("evaluation")
-        
-        # 2. Inject the human requirement directly into the object's feedback property
-        if current_eval:
-            current_eval.feedback = f"HUMAN REQUIREMENT - YOU MUST FOLLOW THIS: {feedback}"
-
         app.update_state(
             config,
             {
-                "verdict": None,
-                "decision": Decision(outcome="fix_flow", reason="Human feedback override"),
-                "evaluation": current_eval,  # Pass the OBJECT back, not a dictionary!
-                "reasoning_steps": state.values.get("reasoning_steps", []) + [f"Human feedback received: '{feedback[:50]}...'"]
+                "human_feedback": feedback,
+                "iteration": 0  
+            },
+            as_node="evaluate" 
+        )
+    # 2. Handle Human Approval (Only trigger if paused at evaluate and no feedback given)
+    elif state.next[0] == "evaluate":
+        app.update_state(
+            config,
+            {
+                "human_feedback": None,
+                "decision": {"outcome": "ready", "reason": "Manual human approval"} # Must be "ready" to match your switchboard
             },
             as_node="evaluate"
         )
 
+    # 3. Handle External Research Approval
     if approved_references is not None:
         app.update_state(
             config,
