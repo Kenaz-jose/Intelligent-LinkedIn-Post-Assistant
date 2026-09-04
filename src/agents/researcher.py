@@ -8,16 +8,28 @@ from langchain_community.tools.tavily_search import TavilySearchResults
 
 load_dotenv(override=True)
 
-# Define the schema locally to avoid circular imports from workflow.py
 class ReferenceItem(TypedDict):
     title: str
     url: str
     snippet: str
 
 class SearchQuerySchema(BaseModel):
-    query: str = Field(description="A precise, targeted search query to find missing facts, benchmarks, or statistics.")
+    query: str = Field(description="A precise, targeted search query.")
 
-RESEARCHER_QUERY_PROMPT = """
+PRE_FLIGHT_PROMPT = """
+You are a research assistant for technical writing.
+Your job is to read the post topic and thesis, then create a single, highly-focused web search query to find current industry data, news, or benchmarks that support this thesis.
+
+TOPIC:
+{topic}
+
+THESIS/INSTRUCTION:
+{instruction}
+
+Formulate a concise search query (max 6-8 words) that targets authoritative sources.
+"""
+
+REPAIR_PROMPT = """
 You are a research assistant for technical writing.
 Your job is to read the evaluator feedback and the current post topic, then create a single, highly-focused web search query to find the missing concrete metrics, data, or technical details requested.
 
@@ -27,7 +39,7 @@ TOPIC:
 EVALUATOR CRITIQUE:
 {critique}
 
-Formulate a concise search query (max 6-8 words) that targets authoritative sources or papers.
+Formulate a concise search query (max 6-8 words) that targets authoritative sources.
 """
 
 class ResearcherAgent:
@@ -36,31 +48,24 @@ class ResearcherAgent:
             model=model_name,
             temperature=0.1,
             max_retries=2,
-            timeout=30.0
+            timeout=60.0
         )
         self.structured_llm = self.llm.with_structured_output(
             SearchQuerySchema,
             method="json_mode"
         )
-        self.prompt = ChatPromptTemplate.from_template(RESEARCHER_QUERY_PROMPT)
-        self.query_chain = self.prompt | self.structured_llm
+        
+        self.pre_flight_chain = ChatPromptTemplate.from_template(PRE_FLIGHT_PROMPT) | self.structured_llm
+        self.repair_chain = ChatPromptTemplate.from_template(REPAIR_PROMPT) | self.structured_llm
         self.tavily = TavilySearchResults(max_results=3)
 
-    def search(self, topic: str, critique: str) -> List[ReferenceItem]:
-        # 1. Generate search query
-        query_result = self.query_chain.invoke({
-            "topic": topic,
-            "critique": critique
-        })
-        search_query = query_result.query
-
-        # 2. Execute Tavily search
+    def _execute_search(self, search_query: str) -> List[ReferenceItem]:
+        """Helper to run Tavily and format results."""
         try:
             raw_results = self.tavily.invoke({"query": search_query})
         except Exception:
             return []
 
-        # 3. Format into ReferenceItem list
         references: List[ReferenceItem] = []
         for res in raw_results:
             references.append({
@@ -68,5 +73,20 @@ class ResearcherAgent:
                 "url": res.get("url", ""),
                 "snippet": res.get("content", "")[:300]
             })
-
         return references
+
+    def initial_search(self, topic: str, instruction: str) -> List[ReferenceItem]:
+        """Used by the FastAPI layer before the graph starts."""
+        query_result = self.pre_flight_chain.invoke({
+            "topic": topic,
+            "instruction": instruction
+        })
+        return self._execute_search(query_result.query)
+
+    def repair_search(self, topic: str, critique: str) -> List[ReferenceItem]:
+        """Used by the LangGraph switchboard mid-loop to fix hallucinations."""
+        query_result = self.repair_chain.invoke({
+            "topic": topic,
+            "critique": critique
+        })
+        return self._execute_search(query_result.query)

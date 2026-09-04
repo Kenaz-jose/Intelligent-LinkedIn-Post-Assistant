@@ -6,7 +6,6 @@ from typing import TypedDict, Optional, List, Dict, Annotated
 from langgraph.graph import StateGraph, END, START
 from langgraph.checkpoint.memory import MemorySaver
 from dotenv import load_dotenv
-from tavily import TavilyClient
 
 from src.utils.logger import logger
 from src.schemas.perspective import PerspectiveBrief
@@ -15,7 +14,6 @@ from src.evaluation.policy import Decision, Verdict, judge, decide, is_better, M
 from src.agents.hook import HookAgent
 from src.agents.generator import GeneratorAgent
 from src.agents.evaluator import EvaluatorAgent
-from src.agents.router import RouterAgent
 from src.agents.fact_checker import FactCheckerAgent
 from src.agents.hook_copywriter import HookCopywriterAgent
 from src.agents.stylist import StylistAgent
@@ -23,7 +21,6 @@ from src.agents.researcher import ResearcherAgent
 
 load_dotenv(override=True)
 
-tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
 class ReferenceItem(TypedDict):
     title: str
@@ -64,17 +61,27 @@ class LinkedInState(TypedDict):
 hook_agent = HookAgent()
 generator_agent = GeneratorAgent()
 evaluator_agent = EvaluatorAgent()
-router_agent = RouterAgent()
 fact_checker_agent = FactCheckerAgent()
 hook_copywriter_agent = HookCopywriterAgent()
 stylist_agent = StylistAgent()
 research_agent = ResearcherAgent()
 
 def brief_block(state: LinkedInState) -> str:
-    """The author's brief as prompt text."""
+    """
+    What it does: Takes the raw Python dictionary of your brief (thesis, key points, etc.) and converts it into a clean, formatted text string.
+    Why it exists: LLMs read text, not raw JSON objects. 
+    This formats your thoughts so the Generator and Evaluator can read them clearly.
+    """
     return PerspectiveBrief.model_validate(state["brief"]).to_prompt_block()
 
 def generate_hooks_node(state: LinkedInState) -> dict:
+    """
+    What it does: Runs at the exact same time as generate_node. 
+    It calls the HookAgent to look at your brief and write 3 alternative opening lines (hooks).
+
+    Why it exists: Hooks are the most important part of a LinkedIn post. 
+    Generating them in parallel saves time (latency) and gives you options later.
+    """
     hooks = hook_agent.generate_hooks(
         topic=state["topic"],
         brief=state["brief"],
@@ -83,6 +90,14 @@ def generate_hooks_node(state: LinkedInState) -> dict:
     return {"alternative_hooks": hooks}
 
 def generate_node(state: LinkedInState):
+
+    """
+    What it does: Hands your brief and tone to the GeneratorAgent. 
+    It returns the very first draft of your LinkedIn post and sets the iteration counter to 0. 
+    It also saves this initial draft as the best_post to start the incumbent tracking.
+
+    Why it exists: This is the starting line. Without this, there is nothing to evaluate or fix.
+    """
     brief = brief_block(state)
     print("\n[DEBUG] WHAT THE GENERATOR SEES:\n", brief)
 
@@ -101,7 +116,6 @@ def generate_node(state: LinkedInState):
 
     current_iter = state.get("iteration", 0)
 
-    # Append to reasoning steps
     new_reasoning = state.get("reasoning_steps", []) + ["Drafting initial post based on brief and tone."]
 
     return {
@@ -114,23 +128,73 @@ def generate_node(state: LinkedInState):
         "best_verdict": state.get("best_verdict"),
         "best_evaluation": state.get("best_evaluation"),
         "best_iteration": state.get("best_iteration", 0),
-        "reasoning_steps": new_reasoning # Returned to update LangGraph state
+        "reasoning_steps": new_reasoning 
     }
 
+def sync_evaluation_node(state: LinkedInState):
+    """
+    What it does: Absolutely nothing. It returns an empty dictionary {}.
+
+    Why it exists: LangGraph requirement. 
+    Because generate and generate_hooks run in parallel, LangGraph needs a "join" node to wait for both of them to finish before moving on to the Evaluator.
+    """
+    return {}
+
 def evaluate_node(state: LinkedInState):
+
+    """
+    What it does: This is the brain of your application.
+    It appends any web data or human feedback to the brief so the AI knows it is "legal" truth.
+    It asks the EvaluatorAgent to grade the draft on 7 dimensions (1-10) and flag hallucinations.
+    It filters out any alternative hooks that hallucinate.
+    The Incumbent Pattern: It compares the new score to the previous_craft score. If the new draft is better, it saves it as the best_post. If the new draft is worse, it throws it out and remembers the better one.
+
+    Why it exists: To mathematically quantify the quality and truthfulness of the text so the system can make deterministic routing decisions.
+    """
     alt_hooks = state.get("alternative_hooks", [])
     alt_hooks_text = "\n".join(
         [f"Hook {i+1} ({h['angle']}): {h['text']}" for i, h in enumerate(alt_hooks)]
     ) if alt_hooks else "None provided."
 
+    # 1. Build the brief text block from the original brief
+    brief_text = brief_block(state)
+    
+    # 2. Format the live web data (if any exists)
+    external_refs = state.get("external_references", [])
+    if external_refs:
+        refs_formatted = "\n".join([
+            f"- {r.get('title', 'Unknown')}: {r.get('snippet', '')}" 
+            for r in external_refs
+        ])
+        
+        # 3. Append it to the brief with a strict instruction overriding the hallucination check
+        brief_text += (
+            "\n\n=== EXPLICITLY PERMITTED EXTERNAL DATA ===\n"
+            f"{refs_formatted}\n"
+            "(CRITICAL RULE: The generator is explicitly permitted to use the facts, metrics, "
+            "and statistics listed in this external data section. Do NOT flag them as unfaithful "
+            "or unsupported claims.)"
+        )
+    
+    human_feedback = state.get("human_feedback")
+    if human_feedback:
+        brief_text += (
+            "\n\n=== HUMAN OVERRIDE (VERIFIED FACTS) ===\n"
+            f"{human_feedback}\n"
+            "(CRITICAL RULE: The human author explicitly requested these additions. "
+            "Treat any entities, metrics, or claims in this feedback as absolute ground truth. "
+            "Do NOT flag them as unsupported hallucinations.)"
+        )
+        
     try:
+        # 4. Pass the enriched brief containing BOTH the author's thoughts and the web data
         evaluation = evaluator_agent.invoke(
             post=state["post"],
-            brief=brief_block(state),
+            brief=brief_text, 
             alternative_hooks=alt_hooks_text
         )
     except Exception as exc:
-        logger.error(f"Evaluation failed: {exc}")
+        print(f"\n[EVALUATOR ERROR] Evaluation failed: {exc}")
         return {
             "decision": Decision(outcome="refine", reason=f"Evaluation failed. Forcing repair. Error: {exc}")
         }
@@ -152,8 +216,9 @@ def evaluate_node(state: LinkedInState):
         previous_craft=state.get("previous_craft", -1.0),
     )
     
-    # Verdict is now defined, so we can safely log its properties
-    new_reasoning = state.get("reasoning_steps", []) + [f"Evaluated draft: Craft score {verdict.craft_score:.1f}, Faithfulness {verdict.passes_faithfulness}."]
+    new_reasoning = state.get("reasoning_steps", []) + [
+        f"Evaluated draft: Craft score {verdict.craft_score:.1f}, Faithfulness {verdict.passes_faithfulness}."
+    ]
 
     update = {
         "evaluation": evaluation,
@@ -188,6 +253,11 @@ def evaluate_node(state: LinkedInState):
     return update
 
 def _get_critique_string(evaluation) -> str:
+    """
+    What it does: Extracts the AI's feedback, weaknesses, and unsupported claims from the Evaluator's Pydantic output and squashes them into a single text summary.
+    
+    Why it exists: When the graph routes to a repair agent (like the Stylist), that agent needs to know exactly what to fix. This function builds their instruction manual.
+    """
     critique_items = []
     if evaluation:
         if getattr(evaluation, "feedback", None):
@@ -199,6 +269,11 @@ def _get_critique_string(evaluation) -> str:
     return "\n".join(critique_items) if critique_items else "Draft needs improvement."
 
 def fix_facts_node(state: LinkedInState):
+    """
+    What it does: Passes the draft to the FactCheckerAgent along with the exact list of hallucinations found by the Evaluator.
+
+    Why it exists: To surgically delete lies without rewriting the entire post and ruining the style.
+    """
     print("\n[REPAIR] Routing to FactCheckerAgent...")
     critique = _get_critique_string(state.get("evaluation"))
     repaired_post = fact_checker_agent.invoke(state["post"], brief_block(state), critique)
@@ -213,6 +288,7 @@ def fix_facts_node(state: LinkedInState):
     }
 
 def fix_hook_node(state: LinkedInState):
+
     print("\n[REPAIR] Routing to HookCopywriterAgent...")
     critique = _get_critique_string(state.get("evaluation"))
     repaired_post = hook_copywriter_agent.invoke(state["post"], critique)
@@ -227,13 +303,24 @@ def fix_hook_node(state: LinkedInState):
     }
 
 def fix_flow_node(state: LinkedInState):
+    """
+    What it does: Passes the draft to the StylistAgent. 
+    It handles two things: fixing poor writing (low craft scores) AND applying your human_feedback (like "Add LangGraph"). 
+    Crucially, it sets "human_feedback": None at the end so the graph doesn't get stuck in an infinite loop.
+
+    Why it exists: To act as the senior copy-editor and human-proxy.
+    """
     print("\n[REPAIR] Routing to StylistAgent...")
 
     evaluation = state.get("evaluation")
     critique = _get_critique_string(evaluation)
 
-    human_feedback = state.get("human_feedback")
+    external_refs = state.get("external_references", [])
+    if external_refs:
+        ref_text = "\n".join([f"- {r.get('title')}: {r.get('snippet')}" for r in external_refs])
+        critique += f"\n\nAPPROVED EXTERNAL REFERENCES TO WEAVE IN:\n{ref_text}"
 
+    human_feedback = state.get("human_feedback")
     if human_feedback:
         critique += (
             "\n\nHUMAN REVISION REQUIREMENT:\n"
@@ -241,65 +328,68 @@ def fix_flow_node(state: LinkedInState):
             "\nYou MUST follow this requirement above all other critiques."
         )
 
-        print("\n[HITL] Human feedback:")
-        print(human_feedback)
+    repaired_post = stylist_agent.invoke(state["post"], critique)
 
-    repaired_post = stylist_agent.invoke(
-        state["post"],
-        critique
-    )
-
-    new_reasoning = (
-        state.get("reasoning_steps", [])
-        + [
-            "StylistAgent active: Refining draft based on evaluator "
-            "feedback and human requirements."
-        ]
-    )
+    new_reasoning = state.get("reasoning_steps", []) + [
+        "StylistAgent active: Refining draft based on evaluator feedback and human requirements."
+    ]
 
     return {
         "post": repaired_post,
         "iteration": state.get("iteration", 0) + 1,
-
-        "human_feedback_applied": (
-            True
-            if human_feedback
-            else state.get("human_feedback_applied", False)
-        ),
-
+        "human_feedback_applied": True if human_feedback else state.get("human_feedback_applied", False),
         "human_feedback": None,
-
-        "human_feedback_history": (
-            [human_feedback] if human_feedback else []
-        ),
-
+        "human_feedback_history": [human_feedback] if human_feedback else [],
         "reasoning_steps": new_reasoning,
     }
 
 def research_node(state: LinkedInState):
-    print("\n[RESEARCH] Routing to ResearcherAgent for web data...")
+    """
+    What it does: Calls the ResearcherAgent to use the Tavily search engine to find live industry data or news that supports your thesis.
+
+    Why it exists: To prevent the AI from making up fake statistics when the brief lacks concrete evidence.
+    """
+    print("\n[RESEARCH] Routing to ResearcherAgent for mid-loop web data...")
     critique = _get_critique_string(state.get("evaluation"))
-    proposed = research_agent.search(
+    
+    proposed = research_agent.repair_search(
         topic=state.get("topic", ""),
         critique=critique
     )
     print(f"[RESEARCH] Retrieved {len(proposed)} candidate references.")
-    return {"proposed_references": proposed}
+    
+    new_reasoning = state.get("reasoning_steps", []) + [
+        "ResearcherAgent active: Fetching external data to address critique."
+    ]
+    
+    return {
+        "proposed_references": proposed,
+        "reasoning_steps": new_reasoning
+    }
 
 def review_research_node(state: LinkedInState):
-    """Pass-through node that acts as the HITL breakpoint for approving web facts."""
+    """
+    What it does: Another dummy node that returns {}.
+
+    Why it exists: This acts as a physical pause button. 
+    The graph stops here (interrupt_before=["review_research"]) so you can read the search results in your UI and approve or reject them before they get added to the post.
+    """
     return {}
 
 def dynamic_switchboard(state: LinkedInState) -> str:
+    """
+    What it does: Reads the state, the scores, and the iteration count, then returns a simple string (like "fix_flow" or "finalize").
+
+    Why it exists: To ensure the pipeline follows strict rules: Human commands > System safety limits > Truthfulness > Writing style.
+    """
     iteration = state.get("iteration", 0)
     decision = state.get("decision")
     verdict = state.get("verdict")
     
     craft = verdict.craft_score if verdict else 0.0
     previous_craft = state.get("previous_craft", 0.0)
-
     human_feedback = state.get("human_feedback")
-
+    
     if human_feedback:
         print("\n[SWITCHBOARD] Human feedback detected. Routing to StylistAgent for refinement.")
         return "fix_flow"
@@ -308,31 +398,43 @@ def dynamic_switchboard(state: LinkedInState) -> str:
         print("\n[SWITCHBOARD] Policy engine approved draft. Stopping.")
         return "finalize"
 
-    if decision and decision.outcome == "refine":
-        print("\n[SWITCHBOARD] Decision: REFINE | Reason: Evaluation failed or human override.")
-        return "fix_flow"
-
-    if iteration > 1 and craft < previous_craft:
-        print(f"\n[SWITCHBOARD] Early Stopping: Score degraded from {previous_craft} to {craft}. Reverting to best draft.")
-        return "finalize"
-
     if iteration >= MAX_ITERATIONS:
         print(f"\n[SWITCHBOARD] Max iterations hit ({MAX_ITERATIONS}). Forcing stop.")
         return "finalize"
 
-    if verdict:
+    if iteration > 1 and craft < (previous_craft - 0.2):
+        print(f"\n[SWITCHBOARD] Early Stopping: Score degraded from {previous_craft} to {craft}. Reverting to best draft.")
+        return "finalize"
 
-        if not verdict.passes_faithfulness:
-            print("\n[SWITCHBOARD] Decision: FIX_FACTS | Reason: Evaluator flagged unfaithful claims.")
-            return "fix_facts"
-            
-        if not verdict.meets_craft_bar:
-            print("\n[SWITCHBOARD] Decision: REFINE | Reason: Craft score below threshold.")
-            return "fix_flow"  
-    print("\n[SWITCHBOARD] Fallback triggered. Stopping.")
+    if verdict and not verdict.passes_faithfulness:
+        print("\n[SWITCHBOARD] Decision: FIX_FACTS | Reason: Evaluator flagged unfaithful claims.")
+        return "fix_facts"
+
+    if decision and decision.outcome == "needs_research":
+        print("\n[SWITCHBOARD] Decision: RESEARCH | Reason: Missing verifiable domain evidence.")
+        return "review_research"
+
+    if verdict and not verdict.meets_craft_bar:
+        print("\n[SWITCHBOARD] Decision: REFINE | Reason: Craft score below threshold.")
+        return "fix_flow"
+
+    if decision and decision.outcome == "refine":
+        print("\n[SWITCHBOARD] Decision: REFINE | Reason: Evaluator error or fallback refine.")
+        return "fix_flow"
+
+    print("\n[SWITCHBOARD] Draft meets all standards. Stopping.")
     return "finalize"
 
+
 def finalize_node(state: LinkedInState):
+    """
+    What it does: The final step before stopping.
+    It looks at the state and asks one question: "Did the human explicitly edit this?"
+    If yes, it outputs the human's edited version.
+    If no, it outputs the best_post (the highest scoring AI draft), discarding any failed repair attempts.
+
+    Why it exists: To guarantee the user always receives the safest, highest-quality version of the text when the graph pauses at interrupt_before=["finalize"].
+    """
     if state.get("human_feedback_applied"):
         final_post = state["post"]
     else:
@@ -359,10 +461,14 @@ graph.add_node("research", research_node)
 graph.add_node("review_research", review_research_node)
 
 # Initial Parallel Edges
+graph.add_node("sync_evaluation", sync_evaluation_node)
 graph.add_edge(START, "generate")
 graph.add_edge(START, "generate_hooks")
-graph.add_edge("generate", "evaluate")
-graph.add_edge("generate_hooks", "evaluate")
+graph.add_edge("generate", "sync_evaluation")
+graph.add_edge("generate_hooks", "sync_evaluation")
+
+graph.add_edge("sync_evaluation", "evaluate")
+
 
 # Switchboard Edges
 graph.add_conditional_edges(
@@ -384,7 +490,8 @@ graph.add_edge("fix_flow", "evaluate")
 
 # Research Loop (Research -> HITL Breakpoint -> Generate Draft)
 graph.add_edge("research", "review_research")
-graph.add_edge("review_research", "generate")
+#graph.add_edge("review_research", "generate")
+graph.add_edge("review_research", "fix_flow")  # Allow human to refine draft after research
 
 graph.add_edge("finalize", END)
 

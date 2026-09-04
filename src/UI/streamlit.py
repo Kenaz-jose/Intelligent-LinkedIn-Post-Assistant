@@ -439,7 +439,8 @@ elif st.session_state.phase == "review":
                             {
                                 "external_references": existing_refs + approved_refs,
                                 "proposed_references": [],
-                                "evaluation": {"feedback": "Integrate the newly provided external references into the draft."}
+                                # Use human_feedback to instruct the Stylist, leaving evaluation intact!
+                                "human_feedback": "Please seamlessly weave the newly approved external references into the draft."
                             },
                             as_node="review_research"
                         )
@@ -492,14 +493,20 @@ elif st.session_state.phase == "review":
             
             if approve_btn:
                 with st.spinner("Finalizing and saving to memory..."):
-                    # Inject manual edits into the state before finalizing
                     if editable_draft != draft:
-                        workflow_app.update_state(config, {"post": editable_draft, "best_post": editable_draft})
+                        workflow_app.update_state(
+                            config, 
+                            {"post": editable_draft, "best_post": editable_draft}
+                        )
                     
-                    final_result = workflow_app.invoke(None, config=config)
+                    # Push the graph forward through the 'finalize' node
+                    for _ in workflow_app.stream(None, config=config):
+                        pass 
+                        
+                    # Fetch the completed state
+                    final_result = workflow_app.get_state(config).values
                     st.session_state.result = final_result
                     
-
                     final_verdict = final_result.get("verdict")
                     final_post = final_result.get("best_post") or final_result.get("post", "")
                     
@@ -523,30 +530,14 @@ elif st.session_state.phase == "review":
                 if not feedback:
                     st.error("Please provide revision instructions if sending back to the repair agents.")
                 else:
-                    with st.spinner("Routing back for revisions..."):
-                        
-                        # 1. Fetch the active brief from the current state
-                        # Use dict() to ensure we aren't modifying the frozen state object directly
-                        current_brief = dict(state_values.get("brief", {}))
-                        
-                        # 2. Safely ensure 'details' is an active list
-                        if not current_brief.get("details"):
-                            current_brief["details"] = []
-                        
-                        # 3. Append the manual feedback as a verified fact
-                        # Labeling it "HUMAN VERIFIED" ensures the LLM knows it's an absolute fact
-                        current_brief["details"].append(f"HUMAN VERIFIED FACT: {feedback}")
-
-                        # 4. Inject human feedback AND the updated brief into the state
+                    with st.spinner("Routing back to StylistAgent for revisions..."):
+                        # Use the exact state key we programmed the switchboard to look for
                         workflow_app.update_state(
                             config,
                             {
-                                "brief": current_brief, # The injected facts are now ground truth
-                                "evaluation": {"feedback": f"HUMAN OVERRIDE: {feedback}"},
-                                "verdict": None,
-                                "decision": None
+                                "human_feedback": feedback
                             },
-                            as_node="evaluate"
+                            as_node="evaluate" # Pretend this update came from the evaluator to trigger the switchboard
                         )
                         
                         # Resume graph execution

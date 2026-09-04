@@ -6,6 +6,7 @@ from src.api.service import (
     resume_pipeline,
     get_pipeline_state
 )
+from src.agents.workflow import app, research_agent
 
 router = APIRouter(prefix="/api", tags=["pipeline"])
 
@@ -18,12 +19,14 @@ async def optimize_stream(request: OptimizeRequest):
                 thread_id=request.thread_id,
                 topic=request.topic,
                 brief=request.brief,
-                tone=request.tone
+                tone=request.tone,
+                needs_live_context=request.needs_live_context
             ),
             media_type="text/event-stream"
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.post("/resume", response_model=OptimizeResponse)
 async def resume_post(request: FeedbackRequest):
@@ -36,6 +39,7 @@ async def resume_post(request: FeedbackRequest):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/state/{thread_id}", response_model=OptimizeResponse)
 def get_state(thread_id: str):

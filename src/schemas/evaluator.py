@@ -76,8 +76,8 @@ class EvaluationResult(BaseModel):
         description="Actionable improvements. Empty if no meaningful improvement remains.",
     )
 
-    feedback: str = Field(
-        ...,
+    feedback: Optional[str] = Field(
+        default="No overall feedback provided.",
         description="Concise 2-4 sentence overall assessment and actionable feedback."
     )
 

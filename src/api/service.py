@@ -56,10 +56,42 @@ def format_state_response(thread_id: str, state_snapshot) -> dict:
         "reasoning_steps": values.get("reasoning_steps", [])
     }
 
-async def stream_pipeline_events(thread_id: str, topic: str, brief: dict, tone: str) -> AsyncGenerator[str, None]:
+async def stream_pipeline_events(
+    thread_id: str, 
+    topic: str, 
+    brief: dict, 
+    tone: str, 
+    needs_live_context: bool = False
+) -> AsyncGenerator[str, None]:
+    
     config = {"configurable": {"thread_id": thread_id}}
-    input_data = {"topic": topic, "brief": brief, "tone": tone, "reasoning_steps": []}
+    
+    # 1. Prepare base input data (fixed missing quotes on external_references)
+    input_data = {
+        "topic": topic, 
+        "brief": brief, 
+        "tone": tone, 
+        "reasoning_steps": [],
+        "external_references": []
+    }
 
+    # 2. Pre-flight Tavily Search
+    if needs_live_context:
+        print("\n[PRE-FLIGHT] Fetching live context before starting graph...")
+        try:
+            search_results = research_agent.search(
+                topic=topic, 
+                critique="Find current industry data, news, or benchmarks supporting this thesis."
+            )
+            input_data["external_references"] = search_results
+            print(f"[PRE-FLIGHT] Injected {len(search_results)} live references into state.")
+            
+            # Optional: You can yield an initial event to the UI so the user knows research is happening
+            yield f"data: {json.dumps({'node': 'pre_flight', 'step': 'Gathering live web context...', 'thread_id': thread_id})}\n\n"
+        except Exception as e:
+            print(f"[PRE-FLIGHT] Search failed, continuing without live context: {e}")
+
+    # 3. Start the LangGraph Stream
     async for event in app.astream(input_data, config=config, stream_mode="updates"):
         for node_name, updates in event.items():
             
@@ -83,14 +115,16 @@ async def stream_pipeline_events(thread_id: str, topic: str, brief: dict, tone: 
             if latest_post:
                 payload["post"] = latest_post
             if latest_evaluation:
+                # Assuming safe() is a helper function defined elsewhere in your service
                 payload["evaluation"] = safe(latest_evaluation)
 
             yield f"data: {json.dumps(payload)}\n\n"
 
+    # 4. Final State Payload
     state = app.get_state(config)
     final_payload = format_state_response(thread_id, state)
     yield f"data: {json.dumps({'status': 'final', 'result': final_payload})}\n\n"
-
+   
 async def resume_pipeline(thread_id: str, feedback: Optional[str] = None, approved_references: Optional[list] = None):
     config = {"configurable": {"thread_id": thread_id}}
     state = app.get_state(config)
@@ -100,23 +134,38 @@ async def resume_pipeline(thread_id: str, feedback: Optional[str] = None, approv
 
     # 1. Handle Human Feedback on the Draft
     if feedback:
+        # Fetch the active brief dictionary from the current state
+        state_values = state.values
+        current_brief = dict(state_values.get("brief", {}))
+        
+        # Safely ensure 'details' is a list
+        if not current_brief.get("details"):
+            current_brief["details"] = []
+            
+        # PERMANENT FIX: Inject the human feedback into the core truth
+        current_brief["details"].append(f"HUMAN VERIFIED FACT: {feedback}")
+
+        # Update the state with BOTH the modified brief and the switchboard trigger
         app.update_state(
             config,
             {
-                "human_feedback": feedback,
+                "brief": current_brief,     # The Evaluator will now permanently trust this
+                "human_feedback": feedback, # The Switchboard routes to the Stylist based on this
                 "iteration": 0  
             },
             as_node="evaluate" 
         )
-    # 2. Handle Human Approval (Only trigger if paused at evaluate and no feedback given)
-    elif state.next[0] == "evaluate":
+        
+    # 2. Handle Human Approval (Only trigger if paused at evaluate/finalize and no feedback given)
+    elif state.next[0] in ["evaluate", "finalize"]:
         app.update_state(
             config,
             {
                 "human_feedback": None,
-                "decision": {"outcome": "ready", "reason": "Manual human approval"} # Must be "ready" to match your switchboard
+                # Force the decision outcome to "ready" to break out of the loop
+                "decision": {"outcome": "ready", "reason": "Manual human approval"} 
             },
-            as_node="evaluate"
+            as_node=state.next[0]
         )
 
     # 3. Handle External Research Approval
@@ -130,7 +179,10 @@ async def resume_pipeline(thread_id: str, feedback: Optional[str] = None, approv
             as_node="review_research"
         )
 
+    # 4. Resume graph execution until the next breakpoint or completion
     await app.ainvoke(None, config=config)
+    
+    # Fetch and format the newly updated state to return to the UI
     new_state = app.get_state(config)
     return format_state_response(thread_id, new_state)
 

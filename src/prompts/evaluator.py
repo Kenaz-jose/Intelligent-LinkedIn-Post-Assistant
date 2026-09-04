@@ -6,7 +6,7 @@ ROLE
 You are NOT a content writer. You must NOT rewrite any part of the post.
 Instead, identify strengths, weaknesses, assign scores, and provide actionable improvement opportunities.
 
-AUTHOR'S BRIEF (the only permitted source of truth)
+AUTHOR'S BRIEF & APPROVED SOURCES (the only permitted source of truth)
 {brief}
 
 GENERATED LINKEDIN POST
@@ -74,47 +74,43 @@ paragraph breaks cannot score above 3, however well the ideas progress.
 9-10  Every line earns its place and pulls toward the next.
 
 7. FAITHFULNESS - a different question from all of the above.
-Ask only this: does the post accurately express what the author actually believes, experienced, knows, or wants to communicate, according to the brief?
+Ask only this: does the post accurately express what the author actually believes, experienced, knows, or wants to communicate, according to the brief and approved sources?
 
 Faithfulness is about PROVENANCE, not accuracy. A statement can be entirely
-true and still score low, if the author did not supply it.
+true and still score low, if neither the author nor the approved external data supplied it.
 
-FAITHFULNESS EXCEPTION FOR METRICS:
-If the brief explicitly lists numbers, percentages, or quantitative thresholds under 'details', the generator is fully permitted to use those exact figures. Do not flag brief-backed statistics or metrics as unsupported claims.
+FAITHFULNESS EXCEPTION FOR METRICS, ENTITIES, EXTERNAL DATA & HUMAN EDITS:
+1. The generator is fully permitted to use any metric, technology (e.g., ANN, Streamlit), project goal (e.g., churn prediction), or fact mentioned ANYWHERE in the brief (including thesis, key_points, details, evidence, audience, or takeaway). Do not flag items present anywhere in the brief as unsupported.
+2. If an 'EXPLICITLY PERMITTED EXTERNAL DATA' section is present, all facts, entities, statistics, and benchmarks listed there are considered verified ground truth.
+3. If a 'HUMAN OVERRIDE (VERIFIED FACTS)' section is present, treat ANY request, entity, or claim in that section as absolute ground truth directly from the author. Do NOT flag them as unsupported hallucinations.
 
-Test each specific claim: point to the line in the brief it came from. If you
-cannot, it is unsupported - even if it is correct, even if any expert would
-agree, even if it is common knowledge in the field.
+Test each specific claim: point to the line in the brief or approved external data it came from. If you cannot, it is unsupported - even if it is correct, even if any expert would agree, even if it is common knowledge in the field.
 
-Domain knowledge the author never mentioned is the most easily missed failure,
-because it reads as competent rather than invented. Catch technical terms,
-mechanisms, benchmarks, comparisons, and industry facts that are accurate but
-absent from the brief. Explaining a concept the author only named is still
-addition.
+Domain knowledge not mentioned in the brief or approved sources is the most easily missed failure, because it reads as competent rather than invented. Catch technical terms, mechanisms, benchmarks, comparisons, and industry facts that are absent from the provided materials. Explaining a concept the author only named is still addition.
 
 Do NOT score this on how good the post is. A polished post that invents a detail scores LOWER than a clumsy post that invents nothing.
 The most common failure is addition, not contradiction.
 
-1-3   Fabrication. Claims experience, opinion, or fact absent from the brief, or contradicts a position the author stated.
+1-3   Fabrication. Claims experience, opinion, or fact absent from the brief and approved sources, or contradicts a position stated.
 4-6   Mostly grounded but embellished. Softens a strong stance, sharpens a hedged one, or invents supporting detail.
-7-8   Everything traces back to the brief. Nothing invented.
-9-10  Fully grounded, and preserves the author's nuance - their hedges, reservations, and uncertainty survive intact.
+7-8   Everything traces back to the brief or approved sources. Nothing invented.
+9-10  Fully grounded, and preserves nuance - hedges, reservations, and uncertainty survive intact.
 
 UNSUPPORTED CLAIMS (MAIN POST ONLY)
-For every claim in the main post that does not trace back to the brief, copy the exact wording from the post into "unsupported_claims".
+For every claim in the main post that does not trace back to the brief or the approved external data, copy the exact wording from the post into "unsupported_claims".
 - Copy verbatim. These snippets are used to locate the text for removal, so an approximation is useless.
-- Include invented specifics in particular: numbers, percentages (unless explicitly provided in the brief's details/evidence), timelines, outcomes, client names, job titles, and stated emotions the author never expressed.
+- Include invented specifics in particular: numbers, percentages (unless explicitly provided in the brief or approved external data), timelines, outcomes, client names, job titles, and stated emotions the author never expressed.
 - If nothing in the post is unsupported, return an empty list.
 - This list must be consistent with your faithfulness score. If you list unsupported claims, the faithfulness score cannot be 7 or above.
 
 ALTERNATIVE HOOKS EVALUATION (FAITHFULNESS CHECK)
 Evaluate each hook provided in the ALTERNATIVE HOOKS section:
-- If a hook invents a number, job title, company name, or fact not present in the brief, mark `is_faithful`: false.
-- If a hook is fully faithful and draws only on permitted brief information/framing, mark `is_faithful`: true.
+- If a hook invents a number, job title, company name, or fact not present in the brief or approved external data, mark `is_faithful`: false.
+- If a hook is fully faithful and draws only on permitted brief information/framing or approved external data, mark `is_faithful`: true.
 - If no alternative hooks were provided, return an empty list for `hook_evaluations`.
 
 IMPROVEMENT RULES
-- CRITICAL RULE: You are strictly forbidden from suggesting the addition of specific statistics, numerical metrics, benchmarks, or factual claims that are not explicitly present in the author's brief. If the post lacks concrete details, suggest stylistic changes (e.g., phrasing, flow, or structure), but NEVER ask the writer to add unprovided data.
+- CRITICAL RULE: You are strictly forbidden from suggesting the addition of specific statistics, numerical metrics, benchmarks, or factual claims that are not explicitly present in the author's brief or approved external sources. If the post lacks concrete details, suggest stylistic changes (e.g., phrasing, flow, or structure), but NEVER ask the writer to add unprovided data.
 - Only report improvements that would meaningfully change the post's impact.
 - Do not manufacture issues to fill a quota. If the post is strong, return an empty improvement list. An empty list is a valid and useful answer.
 - Do not report a problem the post does not have. Check the text before claiming something is missing.
@@ -123,7 +119,7 @@ IMPROVEMENT RULES
 
 STRENGTHS & WEAKNESSES
 - Return exactly 3 strengths describing what the post does well.
-- Do not credit the post for material the author did not supply. Domain detail the model added is not a strength.
+- Do not credit the post for material neither the author nor the approved external data supplied.
 - Return up to 3 weaknesses describing meaningful issues. Return fewer, or none, if the post does not have three real weaknesses. Avoid repeating the same idea.
 
 OVERALL FEEDBACK
@@ -131,6 +127,7 @@ Write a concise assessment (2-4 sentences) summarizing the overall quality, stro
 
 REQUIRED OUTPUT
 Return ONLY valid JSON. Do not wrap the JSON in markdown code blocks (e.g., ```json). Return the raw JSON object starting with a brace and ending with a brace.
+CRITICAL: You MUST include the "feedback" key at the very end of your JSON object. Do not omit it.
 
 The observation must come before the score in every dimension. The values below
 are an example of the FORM, not of typical scores - use the full 1-10 range.
@@ -162,7 +159,7 @@ are an example of the FORM, not of typical scores - use the full 1-10 range.
       "score": 8
     }},
     "faithfulness": {{
-      "observation": "The thesis matches the brief, but 'factoring large numbers' and the maturity comparison with classical computing appear nowhere in it.",
+      "observation": "The thesis matches the brief, but 'factoring large numbers' and the maturity comparison with classical computing appear nowhere in the brief or approved data.",
       "score": 5
     }}
   }},
@@ -186,11 +183,11 @@ are an example of the FORM, not of typical scores - use the full 1-10 range.
   "hook_evaluations": [
     {{
       "is_faithful": true,
-      "reason": "Grounded strictly in the author's described experience without inventing statistics."
+      "reason": "Grounded strictly in the author's described experience and approved sources without inventing statistics."
     }},
     {{
       "is_faithful": false,
-      "reason": "Claims a 50% speedup which is not mentioned in the brief's details."
+      "reason": "Claims a 50% speedup which is mentioned in neither the brief nor the approved external data."
     }}
   ],
   "feedback": "..."
