@@ -1,475 +1,221 @@
-# 🚀 Intelligent LinkedIn Post Assistant
+# Intelligent LinkedIn Post Assistant | LinkForge
 
-> Forge compelling LinkedIn content through multi-agent intelligence.
+> A self-healing, deterministic multi-agent AI pipeline for creating fact-checked, high-craft, and authentic LinkedIn content.
 
-An AI-powered multi-agent system that transforms ideas into polished LinkedIn posts through iterative evaluation, reflection, and refinement.
+Traditional AI writing tools generate generic prose in a single pass and stop. Production-grade content engineering requires an iterative editorial pipeline: extraction of first-hand experience, parallel hook exploration, adversarial evaluation, surgical fact-checking, and targeted stylistic refinement.
 
-Built with **LangGraph**, **LangChain**, **Ollama**, **FastAPI**, and **Streamlit**, this project explores how AI agents can collaborate to mimic the human writing process: drafting, critiquing, reflecting, and revising until high-quality output is achieved.
-
----
-
-![Python](https://img.shields.io/badge/Python-3.11-blue)
-![LangGraph](https://img.shields.io/badge/LangGraph-Multi--Agent-green)
-![Ollama](https://img.shields.io/badge/Ollama-Local%20LLMs-black)
-![Streamlit](https://img.shields.io/badge/UI-Streamlit-red)
-![License](https://img.shields.io/badge/License-MIT-yellow)
+**LinkedInForge** is an agentic content generation pipeline built with **LangGraph**, **FastAPI** and a modern **React/Vite/Tailwind** frontend. It transforms an engineer's raw perspectives and debugging anecdotes into an executive-ready LinkedIn post while enforcing guardrails designed to reduce unsupported claims and preserve the author's authentic voice.
 
 ---
 
-## 🎯 Why This Project?
+## System Architecture
 
-Most AI writing tools generate content once and stop there.
-
-Professional writing, however, is inherently iterative. People naturally draft, critique, reflect, and revise before publishing.
-
-This project explores how **multi-agent systems** can replicate that process by combining generation, evaluation, reflection, and refinement into a feedback loop that continuously improves LinkedIn posts.
-
-Rather than asking:
-
-> "Can an LLM generate a LinkedIn post?"
-
-This project asks:
-
-> "Can multiple AI agents collaborate to improve professional writing through structured feedback and iterative refinement?"
-
----
-
-## ✨ Features
-
-* 📝 Generate LinkedIn posts from simple prompts
-* 🤖 Multi-agent architecture powered by LangGraph
-* 📊 Evaluate posts across multiple quality dimensions
-* 🧠 Reflection-based improvement planning
-* 🔄 Iterative refinement loops
-* 📈 Interactive Streamlit dashboard
-* ⚡ FastAPI service layer for production readiness
-* 🦙 Runs entirely locally using Ollama
-* 🧩 Structured outputs using Pydantic models
-
----
-
-## 🎥 Demo
-
-<img width="100%" alt="Demo" src="docs/screenshots/demo1.png">
-
-<img width="100%" alt="Demo" src="docs/screenshots/demo2.png">
-
-<img width="100%" alt="Demo" src="docs/screenshots/demo3.png">
-
-<img width="100%" alt="Demo" src="docs/screenshots/demo4.png">
-
----
-
-## 🏗️ System Architecture
-
-### Workflow Diagram
+LinkedInForge coordinates specialized agents through a stateful LangGraph workflow governed by an asynchronous FastAPI backend. The state and UI events are streamed to a React frontend via Server-Sent Events (SSE).
 
 ```text
-┌──────────────────────────┐
-│          User            │
-│   Enters Topic/Prompt    │
-└────────────┬─────────────┘
-             │
-             ▼
-┌──────────────────────────┐
-│     Generator Agent      │
-│──────────────────────────│
-│ Creates initial draft    │
-└────────────┬─────────────┘
-             │
-             ▼
-┌──────────────────────────┐
-│     Evaluator Agent      │
-│──────────────────────────│
-│ Scores the draft on:     │
-│ • Hook                   │
-│ • Clarity                │
-│ • Engagement             │
-│ • Authenticity           │
-│ • Professionalism        │
-│ • Structure              │
-│ • Faithfulness           │
-└────────────┬─────────────┘
-             │
-             ▼
-┌──────────────────────────┐
-│     Reflector Agent      │
-│──────────────────────────│
-│ Identifies:              │
-│ • Priority issues        │
-│ • Strengths to preserve  │
-│ • Improvement operations │
-└────────────┬─────────────┘
-             │
-             ▼
-┌──────────────────────────┐
-│      Refiner Agent       │
-│──────────────────────────│
-│ Rewrites the post using  │
-│ the reflection plan      │
-└────────────┬─────────────┘
-             │
-             ▼
-      Needs Improvement?
-             │
-      ┌──────┴──────┐
-      │             │
-      ▼             ▼
-     YES            NO
-      │             │
-      ▼             ▼
-Back to Evaluator   Final Output
+[React/Tailwind Frontend]  <--- (SSE Streaming / REST) --->  [FastAPI Service Layer]
+                                                                  |
+                                                          [LangGraph State Engine]
+                                                                  |
+                  +-----------------------------------------------+-----------------------------------------------+
+                  |                                               |                                               |
+         [Pre-Flight / Tavily]                        [Database & Vector Stores]                          [LLM Integrations]
+         (Live External Data)                   (PostgreSQL/pgvector, ChromaDB, HF)                  (Groq, Google, NVIDIA)
+                  |                                               |                                               |
+          [Generator Agent] -------> [Evaluator Agent] <==========================================================+
+                                            |
+                                    /       |         \
+                              (Fail)       |       (Low Craft)
+                                /       (Pass)          \
+                       [FactChecker]      |           [Stylist] ---------------+
+                            \             v                /
+                             +-----> [HITL Breakpoint] <---+
+                                      (User Inspection)
+                                             |
+                                        [Final Post]
 ```
 
 ---
 
-## 🔄 Workflow
+## Product Workflow
 
-The assistant follows a reflection-driven optimization loop inspired by emerging research in multi-agent systems.
+The application guides the user through a structured, calm editorial process:
 
-### Step 1: Generate
-
-The **Generator Agent** transforms the user's idea into an initial LinkedIn draft.
-
-Example prompt:
-
-> "I got promoted to Engineering Manager after 5 years as a software engineer. Write a LinkedIn post about this achievement."
-
----
-
-### Step 2: Evaluate
-
-The **Evaluator Agent** analyzes the draft and assigns scores for:
-
-* Hook
-* Clarity
-* Engagement
-* Authenticity
-* Professionalism
-* Structure
-* Faithfulness
+1. **Topic** - Define the core subject matter.
+2. **Interview** - Answer targeted questions to extract first-hand experience.
+3. **Probe** - Deep-dive follow-up questions to fill in missing context.
+4. **Brief** - Review the compiled `PerspectiveBrief` before generation begins.
+5. **Review** - A Human-in-the-Loop (HITL) interface to inspect the AI's drafts, swap hooks, and provide explicit feedback.
+6. **Result** - The finalized, polished, and factual LinkedIn post.
 
 ---
 
-### Step 3: Reflect
+## Core Engineering Innovations
 
-The **Reflector Agent** identifies:
+### Provenance-Based Factual Firewall
 
-* Strengths to preserve
-* Weaknesses to address
-* Priority improvements
-* Specific refinement operations
+Most LLM guardrails verify claims against general web truth. LinkedInForge enforces **Provenance Over Factuality**.
+
+* If a statement is technically true in the real world but was never mentioned in the author's brief or approved external references, the `EvaluatorAgent` flags it as **Unfaithful**.
+* The prompt architecture uses an **Observation-First Rubric**, forcing the model to cite verbatim evidence before generating numerical score tokens.
+* If unsupported claims occur, the pipeline routes to the `FactCheckerAgent` to surgically excise them without rewriting the entire post.
+
+### Deterministic Hierarchical Switchboard
+
+Agent routing is decoupled from LLM non-determinism. The `dynamic_switchboard` conditional edge governs workflow routing using a four-tier hierarchy:
+
+1. **Tier 1: Explicit Overrides** — Direct human revisions bypass AI scoring and route straight to the `StylistAgent`.
+2. **Tier 2: System Guardrails** — Enforces hard iteration limits (`MAX_ITERATIONS`) and early stopping buffers to halt score degradation before attempting repairs.
+3. **Tier 3: Repair Routing** — Prioritizes factual fidelity (`fix_facts`) over stylistic refinement (`fix_flow`).
+4. **Tier 4: Default Success** — Drafts meeting quality (`>= 8.0`) and faithfulness bars terminate safely at `finalize`.
+
+### Incumbent Pattern — Score Degradation Protection
+
+Iterative AI rewriting frequently introduces awkward phrasing that degrades a post's craft score. LinkedInForge maintains an incumbent record of the `best_post`, `best_verdict`, and `best_evaluation`.
+
+* After each evaluation cycle, the state engine assesses `is_better(verdict, incumbent)`.
+* If a stylistic revision lowers the craft score, the engine logs: `Draft not an improvement - keeping iteration X`
+* When the workflow concludes, the system serves the highest-scoring historical incumbent rather than the degraded terminal draft.
+
+### Human-in-the-Loop (HITL) Brief Injection
+
+When human revisions are submitted during an interrupt (`interrupt_before=["finalize"]`), traditional systems risk having the Evaluator flag the user's new input as a hallucination.
+
+LinkedInForge addresses this by:
+
+* Dynamically appending human revision instructions directly to `brief["details"]` as a clearly marked `HUMAN VERIFIED FACT` entry.
+* Updating the core ground truth within the checkpoint state, allowing the `StylistAgent` to integrate new claims without triggering false-positive hallucination flags on subsequent passes.
 
 ---
 
-### Step 4: Refine
+## The Agent Suite
 
-The **Refiner Agent** rewrites the post according to the reflection plan.
+| Agent                | Responsibility                                                                         | Input Context                         |
+| -------------------- | -------------------------------------------------------------------------------------- | ------------------------------------- |
+| **GeneratorAgent**   | Drafts initial post based on technical anecdotes and tone.                             | Structured Brief + Permitted Web Data |
+| **HookAgent**        | Generates 3 diverse opening hooks in parallel with initial generation.                 | Topic + Brief + Target Angle          |
+| **EvaluatorAgent**   | Evaluates 7 dimensions including Hook, Clarity, Authenticity, Craft, and Faithfulness. | Draft + Brief + Approved Sources      |
+| **FactCheckerAgent** | Surgically strips unsupported claims, metrics, or timeline fabrications.               | Draft + Brief + Evaluator Critique    |
+| **StylistAgent**     | Polishes pacing, structural layout, and implements explicit user feedback.             | Draft + Weaknesses + Human Revision   |
+| **ResearcherAgent**  | Retrieves real-time benchmarks and industry definitions using Tavily.                  | Topic + Evidence Gaps                 |
 
 ---
 
-### Step 5: Iterate
+## Tech Stack
 
-If the post still requires improvement:
+* **Frontend:** React, Vite, Tailwind CSS
+* **Backend Framework:** FastAPI, Uvicorn, Server-Sent Events (SSE)
+* **Orchestration:** LangGraph (StateGraph, checkpointing, interrupts)
+* **LLM Integrations:** Groq, Google GenAI, NVIDIA AI Endpoints
+* **Database & Memory:** PostgreSQL, pgvector
+* **Vector Store & Embeddings:** ChromaDB, HuggingFace (`all-MiniLM-L6-v2`)
+* **External Retrieval:** Tavily Search API
+* **State Validation:** Pydantic v2
+
+---
+
+## Project Structure
 
 ```text
-Evaluate → Reflect → Refine
-```
-
-continues until the stopping criteria are met.
-
----
-
-## 📊 Evaluation Dimensions
-
-| Dimension       | Description                        |
-| --------------- | ---------------------------------- |
-| Hook            | Ability to capture attention       |
-| Clarity         | Ease of understanding              |
-| Engagement      | Likelihood of audience interaction |
-| Authenticity    | Genuine professional voice         |
-| Professionalism | Appropriateness for LinkedIn       |
-| Structure       | Logical flow and readability       |
-| Faithfulness    | Accuracy to the original intent    |
-
----
-
-## 🖥️ Streamlit Interface
-
-### Inputs
-
-* Topic / Prompt textbox
-* Generate & Optimize button
-
-### Outputs
-
-* 📝 Final LinkedIn Post
-* 📊 Evaluation Report
-* 🧠 Reflection Plan
-* 📈 Quality Score Dashboard
-* 🔁 Iteration Count
-
----
-
-## 📈 Example Optimization Cycle
-
-### Prompt
-
-```text
-I got promoted to Engineering Manager after 5 years as a software engineer.
-```
-
-↓
-
-### Initial Draft
-
-```text
-I got promoted today. Hard work pays off.
-```
-
-↓
-
-### Evaluation
-
-```text
-Hook: 7
-Clarity: 8
-Engagement: 6
-```
-
-↓
-
-### Reflection
-
-```text
-• Improve opening sentence
-• Increase storytelling
-• Add actionable takeaway
-```
-
-↓
-
-### Refined Draft
-
-```text
-Five years ago, I started my journey as a software engineer with more questions than answers.
-
-Today, I'm excited to share that I've been promoted to Engineering Manager.
-
-This milestone reminded me that growth rarely happens overnight. It is built through consistency, curiosity, and the willingness to learn from every challenge.
-
-What has been the biggest lesson in your career journey so far?
-```
-
-↓
-
-### Final Optimized LinkedIn Post
-
----
-
-## 🧠 What I Learned
-
-Through this project, I gained hands-on experience with:
-
-* Designing stateful multi-agent workflows using LangGraph
-* Building structured outputs with Pydantic
-* Implementing reflection-driven optimization loops
-* Developing FastAPI services for AI systems
-* Creating interactive Streamlit interfaces
-* Running local LLMs using Ollama
-* Engineering prompts for collaborative AI agents
-* Managing iterative agent coordination
-
----
-
-## 📂 Project Structure
-
-```text
-LinkedIn/
+Intelligent-LinkedIn-Post-Assistant/
+├── frontend/                      # React / Vite / Tailwind UI application
 │
 ├── src/
 │   ├── agents/
-│   │   ├── generator.py
-│   │   ├── evaluator.py
-│   │   ├── reflector.py
-│   │   ├── refiner.py
-│   │   └── workflow.py
+│   │   ├── generator.py           # Initial post generation
+│   │   ├── evaluator.py           # 7-dimension scoring & faithfulness check
+│   │   ├── fact_checker.py        # Surgical hallucination removal
+│   │   ├── stylist.py             # Prose polishing & HITL integration
+│   │   ├── hook.py                # Parallel hook variants
+│   │   ├── researcher.py          # Tavily web search integration
+│   │   └── workflow.py            # LangGraph StateGraph & dynamic switchboard
 │   │
 │   ├── api/
-│   │   ├── main.py
-│   │   ├── routes.py
-│   │   └── schema.py
-|   |   └── service.py
+│   │   ├── main.py                # FastAPI server application entry point
+│   │   ├── routes.py              # FastAPI endpoints (/optimize/stream, /resume, etc.)
+│   │   └── service.py             # SSE streaming engine & state translators
 │   │
-│   ├── prompts/
-│   │   ├── generator.py
-│   │   ├── evaluator.py
-│   │   ├── reflector.py
-│   │   └── refiner.py
-│   │
-│   ├── schemas/
-│   │   ├── evaluation.py
-│   │   ├── reflection.py
-│   │   └── operations.py
-│   │
-│   ├── utils/
-│   │   ├── helpers.py
-│   │   └── formatting.py
-│   │
-│   ├── UI/
-│   │   └── streamlit.py
-│   │
-│   └── main.py
+│   ├── db/                        # PostgreSQL models & engine initialization
+│   ├── store/                     # LangGraph checkpointer & ChromaDB VectorStore
+│   ├── evaluation/                # Verdict models, craft heuristics, and ranking
+│   ├── schemas/                   # Pydantic schemas for briefs and evaluations
+│   └── UI/
+│       └── streamlit.py           # Legacy/prototype UI (Deprecated)
 │
-├── docs/
-│   ├── screenshots/
-│   └── architecture/
-│
-├── requirements.txt
-├── README.md
-├── .gitignore
-└── LICENSE
+├── init_db.py                     # Database schema creation script
+├── requirements.txt               # Production backend dependencies
+└── README.md
 ```
 
 ---
 
-## ⚙️ Tech Stack
+## Getting Started
 
-### AI & Orchestration
+### 1. Prerequisites
 
-* LangGraph
-* LangChain
-* Ollama
+* Node.js (for the frontend)
+* Python 3.10+
+* PostgreSQL (Running locally or hosted)
+* API Keys (e.g., Groq, Tavily, Google, NVIDIA depending on your configured agents)
 
-### Backend
+### 2. Installation
 
-* FastAPI
-* Pydantic
-
-### Frontend
-
-* Streamlit
-* Pandas
-* Plotly
-
----
-
-## 🚀 Installation
-
-### Clone the Repository
+Clone the repository:
 
 ```bash
-git clone https://github.com/Kenaz-jose/intelligent-linkedin-post-assistant.git
-
-cd intelligent-linkedin-post-assistant
+git clone https://github.com/pranavppramod/Intelligent-LinkedIn-Post-Assistant.git
+cd Intelligent-LinkedIn-Post-Assistant
 ```
 
----
+### 3. Backend Setup
 
-### Create Virtual Environment
-
-#### Windows
+Set up a virtual environment and install the dependencies:
 
 ```bash
-python -m venv linkedin
-linkedin\Scripts\activate
-```
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
 
-#### macOS / Linux
-
-```bash
-python -m venv linkedin
-source linkedin/bin/activate
-```
-
----
-
-### Install Dependencies
-
-```bash
 pip install -r requirements.txt
 ```
 
----
+Create a `.env` file in the root directory based on the APIs you intend to use. For example:
 
-## 🦙 Ollama Setup
+```env
+DATABASE_URL=postgresql+psycopg://user:pass@localhost:5432/linkedinforge
+GROQ_API_KEY=gsk_...
+TAVILY_API_KEY=tvly_...
+```
 
-Install Ollama:
-
-https://ollama.com/
-
-Pull your preferred model:
+Initialize the PostgreSQL database (creates the required tables and `pgvector` extensions):
 
 ```bash
-ollama pull llama3
+python init_db.py
 ```
 
-Start Ollama:
+### 4. Frontend Setup
+
+In a new terminal window, install and start the React frontend:
 
 ```bash
-ollama serve
+cd frontend
+npm install
+npm run dev
 ```
 
----
+### 5. Running the Application
 
-## ▶️ Running the Application
+*Note: The frontend and backend must run in separate terminals.*
 
-### Streamlit Dashboard
+Start the FastAPI backend server:
 
 ```bash
-streamlit run src/UI/streamlit.py
+uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-Open:
-
-```text
-http://localhost:8501
-```
+The React frontend will be available at `http://localhost:5173` (or the port Vite provides) and the FastAPI backend will serve requests and SSE streams at `http://localhost:8000`.
 
 ---
 
-### FastAPI Backend
+## License
 
-```bash
-uvicorn src.main:app --reload
-```
-
-Open API documentation:
-
-```text
-http://127.0.0.1:8000/docs
-```
-
----
-
-## 🎯 Future Improvements
-
-* [ ] Post history and session management
-* [ ] Export to PDF / Markdown
-* [ ] Multiple writing styles
-* [ ] A/B post generation
-* [ ] Support for additional social platforms
-* [ ] Cloud deployment
-* [ ] Human-in-the-loop editing
-
----
-
-## 🤝 Contributing
-
-Contributions, suggestions, and feedback are welcome.
-
-Feel free to open an issue or submit a pull request.
-
----
-
-## 📜 License
-
-This project is licensed under the MIT License.
-
----
-
-## 👨‍💻 Author
-
-Built by **Kenaz Jose**
-
-If you found this project useful, consider giving it a ⭐ on GitHub.
+Distributed under the MIT License. See `LICENSE` for more information.

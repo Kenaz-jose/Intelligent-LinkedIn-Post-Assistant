@@ -1,50 +1,49 @@
-from langchain_openai import ChatOpenAI
+import os
+from dotenv import load_dotenv
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import PydanticOutputParser
+#from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 
 from src.schemas.evaluator import EvaluationResult
 from src.prompts.evaluator import EVALUATOR_PROMPT
+#from src.config.settings import GEMINI_MODEL, GEMINI_API_KEY
+
+load_dotenv(override=True)
 
 
 class EvaluatorAgent:
     """
     Evaluates the quality of a LinkedIn post.
-
-    Returns:
-        EvaluationResult
+    Returns: EvaluationResult
     """
 
-    def __init__(self,model_name: str = "qwen/qwen3-4b-2507",temperature: float = 0.1,):
-
-        self.llm = ChatOpenAI(
-        base_url="http://127.0.0.1:1234/v1",
-        api_key="lm-studio",
-        model=model_name,
-        temperature=temperature
+    def __init__(
+        self,
+        model_name: str = "openai/gpt-oss-120b",
+        temperature: float = 0.1,
+    ):
+        self.llm = ChatGroq(
+            model=model_name,
+            temperature=temperature,
+            max_retries=1,
+            timeout=60,
         )
 
-        self.structured_llm = self.llm.with_structured_output(EvaluationResult)
+        self.parser = PydanticOutputParser(pydantic_object=EvaluationResult)
 
-        self.prompt = ChatPromptTemplate.from_template(EVALUATOR_PROMPT)
-
-        self.chain = self.prompt | self.structured_llm
-
-    def invoke(self, post: str) -> EvaluationResult:
-        """
-        Evaluate a LinkedIn post.
-
-        Args:
-            post (str): LinkedIn post text
-
-        Returns:
-            EvaluationResult
-        """
-
-        result = self.chain.invoke(
-            {
-                "post": post
-            }
+        self.prompt = ChatPromptTemplate.from_template(
+            EVALUATOR_PROMPT + "\n\n{format_instructions}"
         )
 
+        self.chain = self.prompt | self.llm | self.parser
+
+    def invoke(self, post: str, brief: str, alternative_hooks: str = "None provided.") -> EvaluationResult:
+        result = self.chain.invoke({
+            "post": post,
+            "brief": brief,
+            "format_instructions": self.parser.get_format_instructions(),
+            "alternative_hooks": alternative_hooks
+        })
         return result
-
-    

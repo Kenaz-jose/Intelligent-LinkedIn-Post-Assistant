@@ -52,3 +52,11 @@ htmlcov/
 Thumbs.db
 desktop.ini
 
+# Langraph
+.
+.langgraph.json
+
+# Database
+data/
+chroma_db/
+.langgraph_api/

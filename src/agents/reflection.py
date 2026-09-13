@@ -1,39 +1,96 @@
+import os
 import json
-from langchain_openai import ChatOpenAI
+from typing import List
+
+from dotenv import load_dotenv
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import PydanticOutputParser
 
 from src.schemas.reflection import ReflectionResult
+from src.schemas.evaluator import EvaluationResult
 from src.prompts.reflection import REFLECTION_PROMPT
+from src.prompts.faithfullness import FAITHFULLNESS_PROMPT
+from src.config.settings import NVIDIA_MODEL, NVIDIA_API_KEY
+
+load_dotenv(override=True)
 
 
 class ReflectionAgent:
     """
-    Converts evaluation results into actionable improvement plans.
+    Turns an evaluation into a set of edit operations.
+
+    Runs in one of two modes. Normal mode improves craft. Repair mode fires
+    when the policy engine's faithfulness gate fails, and is deliberately
+    narrow: it may only remove unsupported content. Mixing the two lets the
+    model polish the hook of a post that invents a client story, so the
+    modes are kept as separate prompts rather than one prompt with a flag.
     """
 
-    def __init__(self, model_name="qwen/qwen3-4b-2507", temperature=0.2):
+    def __init__(self, model_name: str = NVIDIA_MODEL, temperature: float = 0.2, repair_temperature: float = 0.0):
+        self.parser = PydanticOutputParser(pydantic_object=ReflectionResult)
 
-        self.llm = ChatOpenAI(
-            base_url="http://127.0.0.1:1234/v1",
-            api_key="lm-studio",
-            model=model_name,   
-            temperature=temperature
+        self.llm = ChatNVIDIA(
+            model=model_name,
+            temperature=temperature,
+            api_key=NVIDIA_API_KEY,
+            max_retries=1,
+            timeout=60,
         )
 
-        self.structured_llm = self.llm.with_structured_output(ReflectionResult)
+        # Repair is extraction, not judgment. Creativity here invents
+        # replacement material, which is the failure being repaired.
+        self.repair_llm = ChatNVIDIA(
+            model=model_name,
+            temperature=repair_temperature,
+            api_key=NVIDIA_API_KEY,
+            max_retries=1,
+            timeout=30,
+        )
 
-        self.prompt = ChatPromptTemplate.from_template(REFLECTION_PROMPT)
+        self.chain = (
+            ChatPromptTemplate.from_template(
+                REFLECTION_PROMPT + "\n\n{format_instructions}"
+            )
+            | self.llm
+            | self.parser
+        )
 
-        self.chain = self.prompt | self.structured_llm  # FIX: missing pipeline
+        self.repair_chain = (
+            ChatPromptTemplate.from_template(
+                REPAIR_PROMPT + "\n\n{format_instructions}"
+            )
+            | self.repair_llm
+            | self.parser
+        )
 
-    def invoke(self, post: str, evaluation) -> ReflectionResult:
-        """
-        Args:
-            post: original LinkedIn post
-            evaluation: EvaluationResult object
-        """
+    @staticmethod
+    def _format_claims(claims: List[str]) -> str:
+        if not claims:
+            return "(none listed — locate the unsupported material yourself)"
+        return "\n".join(f"- {claim}" for claim in claims)
+
+    def invoke(
+        self,
+        post: str,
+        evaluation: EvaluationResult,
+        brief: str,
+        repair_mode: bool = False,
+    ) -> ReflectionResult:
+        if repair_mode:
+            return self.repair_chain.invoke({
+                "post": post,
+                "brief": brief,
+                "faithfulness": evaluation.scores.faithfulness,
+                "unsupported_claims": self._format_claims(
+                    getattr(evaluation, "unsupported_claims", [])
+                ),
+                "format_instructions": self.parser.get_format_instructions(),
+            })
 
         return self.chain.invoke({
             "post": post,
-            "evaluation": json.dumps(evaluation.model_dump(), indent=2)
+            "evaluation": json.dumps(evaluation.model_dump(), indent=2),
+            "brief": brief,
+            "format_instructions": self.parser.get_format_instructions(),
         })

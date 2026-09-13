@@ -1,69 +1,55 @@
 from pydantic import BaseModel, Field
-from typing import List, Literal, Dict, Optional
+from typing import List, Literal, Optional
 
-
-HookType = Literal[
-    "question",
-    "statement",
-    "story",
-    "insight",
-    "vulnerability"
-]
-
-EngagementLevel = Literal["low", "medium", "high"]
-
-
-class ChangeApplied(BaseModel):
+class OperationStatus(BaseModel):
     op: str = Field(
         ...,
-        description="Operation applied (e.g., REPHRASE, REORDER, CTA_IMPROVEMENT)."
+        description="The operation type that was attempted (e.g., HOOK_STRENGTHENING, CLARITY_IMPROVEMENT)."
     )
-
-    target: str = Field(
+    
+    target_snippet: str = Field(
         ...,
-        description="Part of the post that was modified."
+        description="The specific text snippet that was targeted for this operation."
     )
-
-    description: str = Field(
+    
+    status: Literal["applied", "skipped"] = Field(
         ...,
-        description="Short explanation of the change applied."
+        description="Whether the edit was successfully applied or skipped due to missing information/conflict."
     )
-
+    
+    reason: str = Field(
+        ...,
+        description="Short explanation of how the change was applied, or why it was skipped."
+    )
 
 class FaithfulnessCheck(BaseModel):
     passed: bool = Field(
         ...,
-        description="Whether final output stayed faithful to original content."
+        description="Whether the final output stayed strictly faithful to original content (no new facts)."
     )
-
+    
     notes: Optional[str] = Field(
         None,
-        description="Any detected issues with hallucination or drift."
+        description="Any detected issues with hallucination, or confirmation of faithfulness."
     )
-
 
 class RefinerResult(BaseModel):
     final_post: str = Field(
         ...,
-        description="Final improved LinkedIn post."
+        description="The final, polished LinkedIn post."
     )
-
-    changes_applied: List[ChangeApplied] = Field(
+    
+    changes_applied: List[OperationStatus] = Field(
         ...,
-        description="Traceable list of edits performed."
+        description="Traceable list of operations that were successfully executed."
     )
-
-    hook_type: HookType = Field(
-        ...,
-        description="Type of hook used in final version."
+    
+    skipped_operations: List[OperationStatus] = Field(
+        default_factory=list,
+        description="List of operations that were skipped because they conflicted or required inventing new information."
     )
-
-    expected_engagement_level: EngagementLevel = Field(
-        ...,
-        description="Estimated engagement potential of the post."
-    )
-
+    
     faithfulness_check: FaithfulnessCheck = Field(
         ...,
-        description="Validation that no new information was introduced."
+        description="Validation that no new information was introduced into the post."
     )

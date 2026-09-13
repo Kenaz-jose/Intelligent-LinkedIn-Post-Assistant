@@ -1,61 +1,96 @@
 from pydantic import BaseModel, Field
-from typing import List, Dict, Optional
+from typing import List, Literal, Optional
+from pydantic import BaseModel, Field
 
 
-class FaithfulnessAnalysis(BaseModel):
-    is_faithful: bool = Field(
+class DimensionScore(BaseModel):
+    """
+    Assessment before number.
+
+    The model must first state what it observed in the text
+    before committing to a score. This makes the score a
+    conclusion based on evidence rather than a first impression.
+    """
+    observation: str = Field(
         ...,
-        description="Whether the output strictly preserves meaning from input without adding new facts, events, or experiences."
+        description=(
+            "One sentence quoting or describing the specific text that determines this score."
+        ),
     )
-    violations: List[str] = Field(
-        default_factory=list,
-        description="List of detected hallucinations or unsupported additions."
-    )
-    notes: Optional[str] = Field(
-        None,
-        description="Additional explanation about faithfulness issues."
+    score: int = Field(
+        ...,
+        ge=1,
+        le=10,
+        description="Score for this dimension from 1 (poor) to 10 (excellent).",
     )
 
 
 class Scores(BaseModel):
-    hook: int = Field(..., ge=0, le=10, description="Ability of opening to capture attention.")
-    clarity: int = Field(..., ge=0, le=10, description="How clear and understandable the post is.")
-    engagement: int = Field(..., ge=0, le=10, description="Likelihood of generating comments or reactions.")
-    authenticity: int = Field(..., ge=0, le=10, description="How human and non-generic the post feels.")
-    professionalism: int = Field(..., ge=0, le=10, description="Appropriateness for LinkedIn tone.")
-    structure: int = Field(..., ge=0, le=10, description="Logical flow and readability.")
-    faithfulness: int = Field(..., ge=0, le=10, description="Strict adherence to original input without hallucination.")
+    """
+    Scores for every evaluation dimension.
 
+    Each dimension contains both:
+    1. An observation explaining what the evaluator found.
+    2. A numerical score based on that observation.
+    """
+
+    hook: DimensionScore
+    clarity: DimensionScore
+    engagement: DimensionScore
+    authenticity: DimensionScore
+    professionalism: DimensionScore
+    structure: DimensionScore
+    faithfulness: DimensionScore
+
+
+class ImprovementOpportunity(BaseModel):
+    category: str = Field(..., description="E.g., Hook, Engagement, Conciseness, Structure")
+    priority: Literal["Low", "Medium", "High", "Critical"] = Field(..., description="Priority level of the improvement")
+    reason: str = Field(..., description="Explanation of what to improve and why it matters")
+    recommendation: str = Field(..., description="High-level recommendation without rewriting the text")
+
+class HookEvaluation(BaseModel):
+    is_faithful: bool = Field(
+        description="True ONLY if the hook is 100% supported by the brief. False if it invents any metric, fact, or claim."
+    )
+    reason: str = Field(description="Brief explanation of why it is faithful or unfaithful.")
 
 class EvaluationResult(BaseModel):
     scores: Scores = Field(..., description="Multi-dimensional scoring of the LinkedIn post.")
-    
-    improvement_priority: List[str] = Field(
-        ...,
-        description="Top 3 areas to improve ranked by impact (e.g., Hook, Engagement, Structure)."
-    )
 
     strengths: List[str] = Field(
-        ...,
-        description="What is already working well in the post."
+        default_factory=list,
+        max_length=3,
+        description="Exactly 3 things that are already working well in the post."
     )
 
     weaknesses: List[str] = Field(
-        ...,
-        description="Key issues reducing quality or impact."
+        default_factory=list,
+        max_length=3,
+        description="Up to 3 meaningful issues. Return fewer, or none, if the post genuinely has none.",
     )
 
-    faithfulness_analysis: FaithfulnessAnalysis = Field(
-        ...,
-        description="Assessment of whether the content introduces any unsupported information."
+    improvement_opportunities: List[ImprovementOpportunity] = Field(
+        default_factory=list,
+        min_length=0,
+        description="Actionable improvements. Empty if no meaningful improvement remains.",
     )
 
-    feedback: str = Field(
-        ...,
-        description="Concise actionable feedback for improvement (no rewriting)."
+    feedback: Optional[str] = Field(
+        default="No overall feedback provided.",
+        description="Concise 2-4 sentence overall assessment and actionable feedback."
     )
 
-    needs_improvement: bool = Field(
-        default=False,
-        description="True if post requires refinement"
+    unsupported_claims: List[str] = Field(
+    default_factory=list,
+    description=(
+        "Verbatim snippets from the post that are not supported by the brief. "
+        "Empty list if everything traces back to the brief."
+    ),
     )
+
+    hook_evaluations: Optional[List[HookEvaluation]] = Field(
+        default=None, 
+        description="Evaluate each provided alternative hook in the exact order they were given."
+    )
+
